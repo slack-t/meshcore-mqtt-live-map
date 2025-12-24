@@ -66,6 +66,18 @@ SITE_OG_IMAGE = os.getenv("SITE_OG_IMAGE", "")
 SITE_URL = os.getenv("SITE_URL", "/")
 SITE_ICON = os.getenv("SITE_ICON", "/static/logo.png")
 SITE_FEED_NOTE = os.getenv("SITE_FEED_NOTE", "Feed: Boston MQTT.")
+try:
+  MAP_START_LAT = float(os.getenv("MAP_START_LAT", "42.3601"))
+except ValueError:
+  MAP_START_LAT = 42.3601
+try:
+  MAP_START_LON = float(os.getenv("MAP_START_LON", "-71.1500"))
+except ValueError:
+  MAP_START_LON = -71.1500
+try:
+  MAP_START_ZOOM = float(os.getenv("MAP_START_ZOOM", "10"))
+except ValueError:
+  MAP_START_ZOOM = 10
 
 LOS_ELEVATION_URL = os.getenv("LOS_ELEVATION_URL", "https://api.opentopodata.org/v1/srtm90m")
 LOS_SAMPLE_MIN = int(os.getenv("LOS_SAMPLE_MIN", "10"))
@@ -1668,6 +1680,9 @@ def root():
     "SITE_URL": SITE_URL,
     "SITE_ICON": SITE_ICON,
     "SITE_FEED_NOTE": SITE_FEED_NOTE,
+    "MAP_START_LAT": MAP_START_LAT,
+    "MAP_START_LON": MAP_START_LON,
+    "MAP_START_ZOOM": MAP_START_ZOOM,
   }
   for key, value in replacements.items():
     safe_value = html.escape(str(value), quote=True)
@@ -1736,6 +1751,15 @@ def line_of_sight(lat1: float, lon1: float, lat2: float, lon2: float):
   max_terrain = max(elevations)
   blocked = max_obstruction > 0.0
   suggestion = _find_los_suggestion(points, elevations) if blocked else None
+  profile = []
+  if distance_m > 0:
+    for (lat, lon, t), elev in zip(points, elevations):
+      line_elev = start_elev + (end_elev - start_elev) * t
+      profile.append([
+        round(distance_m * t, 2),
+        round(float(elev), 2),
+        round(float(line_elev), 2),
+      ])
 
   return {
     "ok": True,
@@ -1753,6 +1777,7 @@ def line_of_sight(lat1: float, lon1: float, lat2: float, lon2: float):
     "provider": LOS_ELEVATION_URL,
     "note": "Straight-line LOS using SRTM90m. No curvature/refraction.",
     "suggested": suggestion,
+    "profile": profile,
   }
 
 

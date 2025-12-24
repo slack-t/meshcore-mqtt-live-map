@@ -3,22 +3,14 @@
 This document captures the state of the project and the key changes made so far, so a new Codex session can pick up without losing context.
 
 ## Overview
-This project renders live MeshCore traffic on a Leaflet + OpenStreetMap map. A FastAPI backend subscribes to MQTT (WSS/TLS), decodes MeshCore packets using `@michaelhart/meshcore-decoder`, and broadcasts device updates and routes over WebSockets to the frontend.
+This project renders live MeshCore traffic on a Leaflet + OpenStreetMap map. A FastAPI backend subscribes to MQTT (WSS/TLS), decodes MeshCore packets using `@michaelhart/meshcore-decoder`, and broadcasts device updates and routes over WebSockets to the frontend. The UI includes heatmap, LOS tools, and map mode toggles.
 
 ## Key Paths
 - `backend/app.py`: FastAPI server, MQTT client, decoder integration, persistence, routing, role/name logic.
 - `backend/static/index.html`: Leaflet UI, markers, legends, routes, styles.
-- `docker-compose.yaml`: runtime configuration (reads values from `.env`).
-- `.env.example`: copy to `.env` and fill in MQTT + site metadata.
-- `data/state.json`: persisted device/trail/roles/names/routes (created at runtime).
-
-## Site Metadata (Title, Embeds, Branding)
-Set these in `.env` to control the page title and social embeds:
-- `SITE_TITLE`, `SITE_DESCRIPTION`
-- `SITE_OG_IMAGE`, `SITE_URL`, `SITE_ICON`
-- `SITE_FEED_NOTE` (small line under the header)
-
-The server injects these into `backend/static/index.html` placeholders at runtime, so Discord/Twitter previews use the correct values.
+- `docker-compose.yaml`: runtime configuration.
+- `data/state.json`: persisted device/trail/roles/names/routes (loaded at startup).
+- `.env`: dev configuration (mirrors template variables).
 
 ## Runtime Commands (Typical Workflow)
 - `docker compose up -d --build` (run after any file changes).
@@ -31,6 +23,17 @@ The server injects these into `backend/static/index.html` placeholders at runtim
 - MQTT is **WebSockets + TLS** (`MQTT_TRANSPORT=websockets`, `MQTT_TLS=true`, `MQTT_WS_PATH=/` or `/mqtt`).
 - Decoder uses Node + `@michaelhart/meshcore-decoder` installed in the container.
 - `app.py` writes a small Node helper and calls it to decode MeshCore packets.
+
+## Frontend UI
+- Header includes a GitHub link icon and HUD summary (stats, feed note).
+- Base map toggle: Light/Dark/Topo; persisted to localStorage.
+- Legend is collapsible and persisted to localStorage.
+- Map start position is configurable with `MAP_START_LAT`, `MAP_START_LON`, `MAP_START_ZOOM`.
+
+## LOS (Line of Sight) Tool
+- `/los` samples terrain via OpenTopodata SRTM90m and returns a profile.
+- UI draws an LOS line (green clear / red blocked) and renders an elevation profile panel.
+- Shift+click nodes or click two points on the map to run LOS.
 
 ## Device Names + Roles
 - Names come from advert payloads or status messages when available.
@@ -56,6 +59,7 @@ If routes aren’t visible:
 - Unknown markers were made more visible (larger, higher contrast gray).
 - Zoom control moved to bottom-right.
 - Route lines are thicker/bolder for large screens.
+- LOS profile panel appears under the LOS status while active.
 
 ## Persistence
 - Devices, trails, names, roles, and routes are saved to `data/state.json`.

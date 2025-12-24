@@ -35,14 +35,34 @@
       z-index: 999;
       max-width: 340px;
     }
-    .hud-header { display: flex; align-items: center; gap: 8px; }
+    .hud-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .hud-brand { display: flex; align-items: center; gap: 8px; }
+    .hud-logo { width: 28px; height: 28px; border-radius: 6px; object-fit: contain; background: rgba(255,255,255,.08); padding: 2px; }
+    .hud-github {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.2);
+      color: #fff;
+      text-decoration: none;
+      transition: background .2s ease, border-color .2s ease;
+    }
+    .hud-github:hover {
+      background: rgba(255,255,255,.22);
+      border-color: rgba(255,255,255,.4);
+    }
+    .hud-github svg { width: 16px; height: 16px; fill: currentColor; }
     .small { opacity: .85; font-size: 12px; }
     .pill { display:inline-block; padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.12); margin-right:6px; }
     .legend { margin-top: 8px; display: grid; gap: 6px; }
     .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; opacity: 0.9; }
     .legend-line { width: 30px; height: 0; border-top: 4px solid; display: inline-block; }
     .legend-trace { border-color: #ff7a1a; border-top-style: dashed; }
-    .legend-message { border-color: #2b8cff; border-top-style: solid; }
+    .legend-message { border-color: #2b8cff; border-top-style: dashed; }
     .legend-advert { border-color: #2ecc71; border-top-style: dotted; }
     .legend-los-clear { border-color: #22c55e; border-top-style: solid; }
     .legend-los-blocked { border-color: #ef4444; border-top-style: dashed; }
@@ -81,6 +101,17 @@
     .popup-title { display: block; font-weight: 600; }
     .popup-id { display: block; opacity: 0.85; }
     .popup-topic { display: inline-block; overflow-wrap: anywhere; word-break: break-word; }
+    .los-profile {
+      margin-top: 6px;
+      padding: 6px 8px;
+      border-radius: 10px;
+      background: rgba(15,23,42,.35);
+      border: 1px solid rgba(255,255,255,.15);
+    }
+    .los-profile-title { margin-bottom: 4px; }
+    .los-profile svg { width: 100%; height: 86px; display: block; }
+    .los-profile-terrain { fill: none; stroke: rgba(226,232,240,.85); stroke-width: 2; }
+    .los-profile-los { fill: none; stroke-width: 2; }
     .trail-animated {
       stroke-dasharray: 6 10;
       animation: trail-dash 6s linear infinite;
@@ -102,12 +133,24 @@
 <body>
   <div class="hud">
     <div class="hud-header">
-      <div><span class="pill">Live</span> {{SITE_TITLE}}</div>
+      <div class="hud-brand">
+        <img class="hud-logo" src="/static/logo.png" alt="Greater Boston Mesh" />
+        <div><span class="pill">Live</span> {{SITE_TITLE}}</div>
+      </div>
+      <a class="hud-github" href="https://github.com/yellowcooln/meshcore-mqtt-live-map/" target="_blank" rel="noopener" aria-label="GitHub repository">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.5 2.87 8.32 6.84 9.67.5.1.68-.23.68-.5v-1.77c-2.78.62-3.37-1.38-3.37-1.38-.46-1.2-1.12-1.52-1.12-1.52-.9-.64.07-.63.07-.63 1 .07 1.53 1.07 1.53 1.07.9 1.6 2.36 1.14 2.94.87.1-.66.35-1.14.63-1.4-2.22-.27-4.56-1.14-4.56-5.08 0-1.12.39-2.04 1.02-2.76-.1-.27-.45-1.37.1-2.86 0 0 .83-.27 2.72 1.05a9.2 9.2 0 0 1 2.48-.35c.84 0 1.68.12 2.48.35 1.88-1.32 2.7-1.05 2.7-1.05.56 1.5.21 2.6.11 2.86.64.72 1.02 1.64 1.02 2.76 0 3.95-2.34 4.8-4.57 5.07.36.33.68.97.68 1.96v2.9c0 .28.18.6.69.5A10.03 10.03 0 0 0 22 12.26C22 6.58 17.52 2 12 2z"/>
+        </svg>
+      </a>
     </div>
     <div class="small">Markers update in real time. Trails show last ~50 points.</div>
     <div class="small">{{SITE_FEED_NOTE}}</div>
     <div class="small" id="stats"></div>
     <div class="small" id="los-status"></div>
+    <div class="los-profile" id="los-profile" hidden>
+      <div class="small los-profile-title">Elevation profile</div>
+      <svg id="los-profile-svg" viewBox="0 0 300 90" preserveAspectRatio="none"></svg>
+    </div>
     <button class="legend-toggle" id="legend-toggle" type="button">Hide legend</button>
     <button class="map-toggle" id="map-toggle" type="button">Dark map</button>
     <button class="map-toggle" id="topo-toggle" type="button">Topo map</button>
@@ -135,7 +178,7 @@
   <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 
   <script>
-    const map = L.map('map', { zoomControl: false }).setView([42.3601, -71.1500], 10); // default Boston-ish
+    const map = L.map('map', { zoomControl: false }).setView([{{MAP_START_LAT}}, {{MAP_START_LON}}], {{MAP_START_ZOOM}});
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     const lightTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -173,6 +216,8 @@
     let losPoints = [];
     let losLine = null;
     let losSuggestion = null;
+    const losProfile = document.getElementById('los-profile');
+    const losProfileSvg = document.getElementById('los-profile-svg');
 
     function resolveRole(d) {
       const role = (d.role || '').toLowerCase();
@@ -206,12 +251,19 @@
       }
     }
 
+    function clearLosProfile() {
+      if (!losProfile || !losProfileSvg) return;
+      losProfile.hidden = true;
+      losProfileSvg.innerHTML = '';
+    }
+
     function clearLos() {
       losPoints = [];
       losLine = null;
       losSuggestion = null;
       losLayer.clearLayers();
       setLosStatus('');
+      clearLosProfile();
     }
 
     function setLosActive(active) {
@@ -226,6 +278,59 @@
       } else {
         setLosStatus('LOS: select first point (Shift+click nodes too)');
       }
+    }
+
+    function renderLosProfile(profile, blocked) {
+      if (!losProfile || !losProfileSvg) return;
+      if (!Array.isArray(profile) || profile.length < 2) {
+        clearLosProfile();
+        return;
+      }
+      const width = 300;
+      const height = 90;
+      const pad = 6;
+      const last = profile[profile.length - 1];
+      const totalDistance = Math.max(1, Number(last[0]) || 1);
+      let minElev = Infinity;
+      let maxElev = -Infinity;
+      profile.forEach(item => {
+        const terrain = Number(item[1]);
+        const los = Number(item[2]);
+        if (!Number.isNaN(terrain)) {
+          minElev = Math.min(minElev, terrain);
+          maxElev = Math.max(maxElev, terrain);
+        }
+        if (!Number.isNaN(los)) {
+          minElev = Math.min(minElev, los);
+          maxElev = Math.max(maxElev, los);
+        }
+      });
+      if (!Number.isFinite(minElev) || !Number.isFinite(maxElev) || minElev === maxElev) {
+        clearLosProfile();
+        return;
+      }
+      const span = maxElev - minElev;
+      const innerWidth = width - pad * 2;
+      const innerHeight = height - pad * 2;
+      const toX = (d) => pad + (d / totalDistance) * innerWidth;
+      const toY = (e) => height - pad - ((e - minElev) / span) * innerHeight;
+      const terrainPath = profile.map((item, idx) => {
+        const d = Number(item[0]);
+        const elev = Number(item[1]);
+        return `${idx === 0 ? 'M' : 'L'}${toX(d).toFixed(2)} ${toY(elev).toFixed(2)}`;
+      }).join(' ');
+      const losPath = profile.map((item, idx) => {
+        const d = Number(item[0]);
+        const elev = Number(item[2]);
+        return `${idx === 0 ? 'M' : 'L'}${toX(d).toFixed(2)} ${toY(elev).toFixed(2)}`;
+      }).join(' ');
+      const losColor = blocked ? '#ef4444' : '#22c55e';
+      losProfileSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      losProfileSvg.innerHTML = `
+        <path class="los-profile-terrain" d="${terrainPath}"></path>
+        <path class="los-profile-los" d="${losPath}" stroke="${losColor}"></path>
+      `;
+      losProfile.hidden = false;
     }
 
     function formatLastContact(tsSeconds) {
@@ -518,6 +623,7 @@
           if (losLine) {
             losLine.setStyle({ color: '#9ca3af', weight: 4, opacity: 0.8, dashArray: '6 10' });
           }
+          clearLosProfile();
           return;
         }
         const blocked = data.blocked;
@@ -530,7 +636,7 @@
               : `${Math.round(meters)} m`;
           }
         }
-        const obstruction = blocked ? `blocked (+${data.max_obstruction_m}m)` : 'clear';
+        const obstruction = blocked ? `Blocked (+${data.max_obstruction_m}m)` : 'Clear';
         let statusText = `LOS: ${distance} • ${obstruction}`;
         if (losSuggestion) {
           losLayer.removeLayer(losSuggestion);
@@ -538,7 +644,7 @@
         }
         if (data.suggested) {
           const s = data.suggested;
-          const label = s.clear ? 'Relay (clear)' : 'Relay (blocked)';
+          const label = s.clear ? 'Relay (Clear)' : 'Relay (Still Blocked)';
           const color = s.clear ? '#22c55e' : '#f59e0b';
           losSuggestion = L.circleMarker([s.lat, s.lon], {
             radius: 6,
@@ -548,9 +654,10 @@
             weight: 2
           }).addTo(losLayer);
           losSuggestion.bindTooltip(`${label}<br/>${s.lat}, ${s.lon}`, { direction: 'top' });
-          statusText += s.clear ? ' • relay suggested' : ' • relay maybe';
+          statusText += s.clear ? ' • Relay Suggested' : ' • Relay May Help (Still Blocked)';
         }
         setLosStatus(statusText);
+        renderLosProfile(data.profile, blocked);
         if (losLine) {
           losLine.setStyle({
             color: blocked ? '#ef4444' : '#22c55e',
@@ -562,34 +669,7 @@
       } catch (err) {
         console.warn('los failed', err);
         setLosStatus('LOS: error');
-      }
-    }
-
-    function handleLosPoint(latlng) {
-      if (losPoints.length >= 2) {
-        clearLos();
-      }
-      losPoints.push(latlng);
-      L.circleMarker(latlng, {
-        radius: 5,
-        color: '#fbbf24',
-        fillColor: '#fbbf24',
-        fillOpacity: 0.9,
-        weight: 2
-      }).addTo(losLayer);
-
-      if (losPoints.length === 1) {
-        setLosStatus('LOS: select second point');
-        return;
-      }
-      if (losPoints.length === 2) {
-        losLine = L.polyline([losPoints[0], losPoints[1]], {
-          color: '#9ca3af',
-          weight: 4,
-          opacity: 0.8,
-          dashArray: '6 10'
-        }).addTo(losLayer);
-        runLosCheck();
+        clearLosProfile();
       }
     }
 
@@ -653,6 +733,34 @@
       losToggle.addEventListener('click', () => {
         setLosActive(!losActive);
       });
+    }
+
+    function handleLosPoint(latlng) {
+      if (losPoints.length >= 2) {
+        clearLos();
+      }
+      losPoints.push(latlng);
+      L.circleMarker(latlng, {
+        radius: 5,
+        color: '#fbbf24',
+        fillColor: '#fbbf24',
+        fillOpacity: 0.9,
+        weight: 2
+      }).addTo(losLayer);
+
+      if (losPoints.length === 1) {
+        setLosStatus('LOS: select second point');
+        return;
+      }
+      if (losPoints.length === 2) {
+        losLine = L.polyline([losPoints[0], losPoints[1]], {
+          color: '#9ca3af',
+          weight: 4,
+          opacity: 0.8,
+          dashArray: '6 10'
+        }).addTo(losLayer);
+        runLosCheck();
+      }
     }
 
     map.on('click', (ev) => {

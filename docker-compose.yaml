@@ -29,6 +29,9 @@ services:
       TRAIL_LEN: "${TRAIL_LEN}"
       ROUTE_TTL_SECONDS: "${ROUTE_TTL_SECONDS}"
       MESSAGE_ORIGIN_TTL_SECONDS: "${MESSAGE_ORIGIN_TTL_SECONDS}"
+      MAP_START_LAT: "${MAP_START_LAT}"
+      MAP_START_LON: "${MAP_START_LON}"
+      MAP_START_ZOOM: "${MAP_START_ZOOM}"
     restart: unless-stopped
     volumes:
       - ./data:/data
