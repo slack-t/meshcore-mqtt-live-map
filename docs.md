@@ -3,13 +3,14 @@
 This document captures the state of the project and the key changes made so far, so a new Codex session can pick up without losing context.
 
 ## Overview
-This project renders live MeshCore traffic on a Leaflet + OpenStreetMap map. A FastAPI backend subscribes to MQTT (WSS/TLS), decodes MeshCore packets using `@michaelhart/meshcore-decoder`, and broadcasts device updates and routes over WebSockets to the frontend. The UI includes heatmap, LOS tools, and map mode toggles.
+This project renders live MeshCore traffic on a Leaflet + OpenStreetMap map. A FastAPI backend subscribes to MQTT (WSS/TLS), decodes MeshCore packets using `@michaelhart/meshcore-decoder`, and broadcasts device updates and routes over WebSockets to the frontend. The UI includes heatmap, LOS tools, map mode toggles, and a 24‑hour route history layer.
 
 ## Key Paths
 - `backend/app.py`: FastAPI server, MQTT client, decoder integration, persistence, routing, role/name logic.
 - `backend/static/index.html`: Leaflet UI, markers, legends, routes, styles.
 - `docker-compose.yaml`: runtime configuration.
-- `data/state.json`: persisted device/trail/roles/names/routes (loaded at startup).
+- `data/state.json`: persisted device/trail/roles/names (loaded at startup).
+- `data/route_history.jsonl`: rolling 24h route history segments (lines).
 - `.env`: dev configuration (mirrors template variables).
 
 ## Runtime Commands (Typical Workflow)
@@ -33,10 +34,11 @@ This project renders live MeshCore traffic on a Leaflet + OpenStreetMap map. A F
 - Map start position is configurable with `MAP_START_LAT`, `MAP_START_LON`, `MAP_START_ZOOM`.
 - Default base layer can be set with `MAP_DEFAULT_LAYER` (localStorage overrides).
 - Node search (name or key) and a labels toggle (persisted to localStorage).
-- Hide Nodes toggle hides markers and trails; routes remain visible.
+- History toggle defaults off and shows 24h volume-coded path density when enabled.
+- Hide Nodes toggle hides markers, trails, heat, routes, and history layers.
 - Propagation overlay keeps heat/routes/trails/markers above it after render.
 - Heatmap includes all route payload types (adverts are no longer skipped).
-- MQTT online status shows as a green marker outline and popup status; legend includes the online window.
+- MQTT online status shows as a green marker outline and popup status; it uses `mqtt_seen_ts` from `/status` or `/packets` topics (configurable).
 
 ## LOS (Line of Sight) Tool
 - LOS runs **server-side only** via `/los` (no client-side elevation fetch).
@@ -60,6 +62,11 @@ Routes are drawn when:
 - Multiple observers see the same message hash (fanout), or
 - As a fallback, when one hash maps to a known device, a direct line is drawn to the receiver.
 
+### 24h History Layer
+- Every route segment is persisted to `data/route_history.jsonl` and kept for the last `ROUTE_HISTORY_HOURS`.
+- History lines are color‑coded by volume (blue = low, orange = mid, red = high) and weight scales with counts.
+- History is hidden by default; toggle it via the HUD.
+
 If routes aren’t visible:
 - The packet may only include a single hop (`path: ["24"]`).
 - Other repeaters might not be publishing to MQTT, so the message is only seen by one observer.
@@ -74,8 +81,9 @@ If routes aren’t visible:
 - LOS profile panel appears under the LOS status while active.
 
 ## Persistence
-- Devices, trails, names, roles, and routes are saved to `data/state.json`.
+- Devices, trails, names, and roles are saved to `data/state.json`.
 - On restart, devices should stay visible if `state.json` exists.
+- Route history is persisted separately to `data/route_history.jsonl` (rolling window).
 - If stale/mis-labeled roles appear, delete `data/state.json` or remove role entries.
 - State load now removes any `0,0` coordinates from devices/trails.
 
@@ -84,6 +92,7 @@ If routes aren’t visible:
 - If markers appear in the wrong place, inspect `decoder_meta` and location fields.
 - If roles flip incorrectly, verify `role_target_id` in `/debug/last`.
 - If routes don’t show, verify message hashes appear under multiple receivers in MQTT.
+- If MQTT online looks wrong, confirm `MQTT_ONLINE_TOPIC_SUFFIXES` in `.env` (default `/status,/packets`).
 
 ## Recent Fixes / Changes Summary
 - Added full WSS support and TLS options.
@@ -98,4 +107,6 @@ If routes aren’t visible:
 - LOS is server-side only; elevation profile/peaks are returned by `/los`.
 - MQTT online indicator (green outline + legend) and configurable online window.
 - Filters out `0,0` GPS points from devices, trails, and routes.
+- Added 24h route history storage + history toggle with volume-based colors.
+- Hide nodes now hides heat/routes/history along with markers/trails.
 - Fixed MQTT disconnect callback signature so broker drops don’t crash the MQTT loop.

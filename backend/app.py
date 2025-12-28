@@ -11,10 +11,10 @@ import urllib.parse
 import urllib.request
 from collections import deque
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, Optional, Set, Tuple, List
+from typing import Any, Dict, Optional, Set, Tuple, List, Deque
 
 import paho.mqtt.client as mqtt
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -37,10 +37,21 @@ MQTT_WS_PATH = os.getenv("MQTT_WS_PATH", "/mqtt")  # often "/" or "/mqtt"
 
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "")
 
+STATE_DIR = os.getenv("STATE_DIR", "/data")
+STATE_FILE = os.getenv("STATE_FILE", os.path.join(STATE_DIR, "state.json"))
+DEVICE_ROLES_FILE = os.getenv("DEVICE_ROLES_FILE", os.path.join(STATE_DIR, "device_roles.json"))
+STATE_SAVE_INTERVAL = float(os.getenv("STATE_SAVE_INTERVAL", "5"))
+
 DEVICE_TTL_SECONDS = int(os.getenv("DEVICE_TTL_SECONDS", "300"))
 TRAIL_LEN = int(os.getenv("TRAIL_LEN", "30"))
 ROUTE_TTL_SECONDS = int(os.getenv("ROUTE_TTL_SECONDS", "120"))
 ROUTE_PAYLOAD_TYPES = os.getenv("ROUTE_PAYLOAD_TYPES", "8,9,2,5,4")
+ROUTE_HISTORY_ENABLED = os.getenv("ROUTE_HISTORY_ENABLED", "true").lower() == "true"
+ROUTE_HISTORY_HOURS = float(os.getenv("ROUTE_HISTORY_HOURS", "24"))
+ROUTE_HISTORY_MAX_SEGMENTS = int(os.getenv("ROUTE_HISTORY_MAX_SEGMENTS", "40000"))
+ROUTE_HISTORY_FILE = os.getenv("ROUTE_HISTORY_FILE", os.path.join(STATE_DIR, "route_history.jsonl"))
+ROUTE_HISTORY_PAYLOAD_TYPES = os.getenv("ROUTE_HISTORY_PAYLOAD_TYPES", ROUTE_PAYLOAD_TYPES)
+ROUTE_HISTORY_COMPACT_INTERVAL = float(os.getenv("ROUTE_HISTORY_COMPACT_INTERVAL", "120"))
 MESSAGE_ORIGIN_TTL_SECONDS = int(os.getenv("MESSAGE_ORIGIN_TTL_SECONDS", "300"))
 HEAT_TTL_SECONDS = int(os.getenv("HEAT_TTL_SECONDS", "600"))
 MQTT_ONLINE_SECONDS = int(os.getenv("MQTT_ONLINE_SECONDS", "300"))
@@ -60,10 +71,6 @@ PAYLOAD_PREVIEW_MAX = int(os.getenv("PAYLOAD_PREVIEW_MAX", "800"))
 DIRECT_COORDS_MODE = os.getenv("DIRECT_COORDS_MODE", "topic").strip().lower()
 DIRECT_COORDS_TOPIC_REGEX = os.getenv("DIRECT_COORDS_TOPIC_REGEX", r"(position|location|gps|coords)")
 DIRECT_COORDS_ALLOW_ZERO = os.getenv("DIRECT_COORDS_ALLOW_ZERO", "false").lower() == "true"
-STATE_DIR = os.getenv("STATE_DIR", "/data")
-STATE_FILE = os.getenv("STATE_FILE", os.path.join(STATE_DIR, "state.json"))
-DEVICE_ROLES_FILE = os.getenv("DEVICE_ROLES_FILE", os.path.join(STATE_DIR, "device_roles.json"))
-STATE_SAVE_INTERVAL = float(os.getenv("STATE_SAVE_INTERVAL", "5"))
 
 SITE_TITLE = os.getenv("SITE_TITLE", "Greater Boston Mesh Live Map")
 SITE_DESCRIPTION = os.getenv("SITE_DESCRIPTION", "Live view of Greater Boston Mesh nodes, message routes, and advert paths.")
@@ -84,6 +91,9 @@ try:
 except ValueError:
   MAP_START_ZOOM = 10
 MAP_DEFAULT_LAYER = os.getenv("MAP_DEFAULT_LAYER", "light").strip().lower()
+
+PROD_MODE = os.getenv("PROD_MODE", "false").lower() == "true"
+PROD_TOKEN = os.getenv("PROD_TOKEN", "").strip()
 
 LOS_ELEVATION_URL = os.getenv("LOS_ELEVATION_URL", "https://api.opentopodata.org/v1/srtm90m")
 LOS_SAMPLE_MIN = int(os.getenv("LOS_SAMPLE_MIN", "10"))
@@ -117,6 +127,7 @@ stats = {
 }
 result_counts: Dict[str, int] = {}
 seen_devices: Dict[str, float] = {}  # device_id -> last_seen_ts
+mqtt_seen: Dict[str, float] = {}     # device_id -> last mqtt ping
 last_seen_broadcast: Dict[str, float] = {}
 topic_counts: Dict[str, int] = {}    # topic -> count
 
@@ -146,6 +157,10 @@ devices: Dict[str, DeviceState] = {}
 trails: Dict[str, list] = {}
 routes: Dict[str, Dict[str, Any]] = {}
 heat_events: List[Dict[str, float]] = []
+route_history_segments: Deque[Dict[str, Any]] = deque()
+route_history_edges: Dict[str, Dict[str, Any]] = {}
+route_history_compact = False
+route_history_last_compact = 0.0
 node_hash_to_device: Dict[str, str] = {}
 elevation_cache: Dict[str, Tuple[float, float]] = {}
 device_names: Dict[str, str] = {}
@@ -181,6 +196,16 @@ for _part in ROUTE_PAYLOAD_TYPES.split(","):
     continue
   try:
     ROUTE_PAYLOAD_TYPES_SET.add(int(_part))
+  except ValueError:
+    pass
+
+ROUTE_HISTORY_PAYLOAD_TYPES_SET: Set[int] = set()
+for _part in ROUTE_HISTORY_PAYLOAD_TYPES.split(","):
+  _part = _part.strip()
+  if not _part:
+    continue
+  try:
+    ROUTE_HISTORY_PAYLOAD_TYPES_SET.add(int(_part))
   except ValueError:
     pass
 
@@ -748,7 +773,68 @@ def _device_payload(device_id: str, state: "DeviceState") -> Dict[str, Any]:
     payload["last_seen_ts"] = last_seen
   else:
     payload["last_seen_ts"] = payload.get("ts")
+  mqtt_seen_ts = mqtt_seen.get(device_id)
+  if mqtt_seen_ts:
+    payload["mqtt_seen_ts"] = mqtt_seen_ts
+  if PROD_MODE:
+    payload.pop("raw_topic", None)
   return payload
+
+
+def _route_payload(route: Dict[str, Any]) -> Dict[str, Any]:
+  if not PROD_MODE:
+    return route
+  return {
+    "id": route.get("id"),
+    "points": route.get("points"),
+    "route_mode": route.get("route_mode"),
+    "ts": route.get("ts"),
+    "expires_at": route.get("expires_at"),
+    "payload_type": route.get("payload_type"),
+  }
+
+
+def _history_edge_payload(edge: Dict[str, Any]) -> Dict[str, Any]:
+  return {
+    "id": edge.get("id"),
+    "a": edge.get("a"),
+    "b": edge.get("b"),
+    "count": edge.get("count"),
+    "last_ts": edge.get("last_ts"),
+  }
+
+
+def _extract_token(headers: Dict[str, str]) -> Optional[str]:
+  auth = headers.get("authorization")
+  if auth:
+    parts = auth.strip().split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+      return parts[1]
+    return auth.strip()
+  return headers.get("x-access-token") or headers.get("x-token")
+
+
+def _require_prod_token(request: Request) -> None:
+  if not PROD_MODE:
+    return
+  if not PROD_TOKEN:
+    raise HTTPException(status_code=503, detail="prod_token_not_set")
+  token = request.query_params.get("token") or request.query_params.get("access_token")
+  if not token:
+    token = _extract_token(request.headers)
+  if token != PROD_TOKEN:
+    raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def _ws_authorized(ws: WebSocket) -> bool:
+  if not PROD_MODE:
+    return True
+  if not PROD_TOKEN:
+    return False
+  token = ws.query_params.get("token") or ws.query_params.get("access_token")
+  if not token:
+    token = _extract_token(ws.headers)
+  return token == PROD_TOKEN
 
 
 def _load_state() -> None:
@@ -863,7 +949,7 @@ def _load_state() -> None:
 
 
 async def _state_saver() -> None:
-  global state_dirty
+  global state_dirty, mqtt_seen
   while True:
     if state_dirty:
       try:
@@ -880,6 +966,243 @@ async def _state_saver() -> None:
 
 def _coords_are_zero(lat: float, lon: float) -> bool:
   return abs(lat) < 1e-6 and abs(lon) < 1e-6
+
+
+def _history_payload_allowed(payload_type: Optional[int]) -> bool:
+  if not ROUTE_HISTORY_ENABLED or ROUTE_HISTORY_HOURS <= 0:
+    return False
+  if not ROUTE_HISTORY_PAYLOAD_TYPES_SET:
+    return True
+  if payload_type is None:
+    return False
+  return payload_type in ROUTE_HISTORY_PAYLOAD_TYPES_SET
+
+
+def _normalize_history_point(point: Any) -> Optional[Tuple[float, float]]:
+  if not isinstance(point, (list, tuple)) or len(point) < 2:
+    return None
+  try:
+    lat_val = float(point[0])
+    lon_val = float(point[1])
+  except (TypeError, ValueError):
+    return None
+  if _coords_are_zero(lat_val, lon_val):
+    return None
+  return (round(lat_val, 6), round(lon_val, 6))
+
+
+def _history_edge_key(a: Tuple[float, float], b: Tuple[float, float]) -> Tuple[str, Tuple[float, float], Tuple[float, float]]:
+  if a <= b:
+    key = f"{a[0]:.6f},{a[1]:.6f}|{b[0]:.6f},{b[1]:.6f}"
+    return key, a, b
+  key = f"{b[0]:.6f},{b[1]:.6f}|{a[0]:.6f},{a[1]:.6f}"
+  return key, b, a
+
+
+def _record_route_history(route: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str]]:
+  if not ROUTE_HISTORY_ENABLED:
+    return [], []
+  payload_type = route.get("payload_type")
+  if not _history_payload_allowed(payload_type):
+    return [], []
+  points = route.get("points")
+  if not isinstance(points, list) or len(points) < 2:
+    return [], []
+
+  ts = route.get("ts") or time.time()
+  updated_keys: Set[str] = set()
+  new_entries: List[Dict[str, Any]] = []
+
+  for idx in range(len(points) - 1):
+    a = _normalize_history_point(points[idx])
+    b = _normalize_history_point(points[idx + 1])
+    if not a or not b:
+      continue
+    key, first, second = _history_edge_key(a, b)
+    new_entries.append({
+      "ts": float(ts),
+      "a": [first[0], first[1]],
+      "b": [second[0], second[1]],
+    })
+    edge = route_history_edges.get(key)
+    if not edge:
+      edge = {
+        "id": key,
+        "a": [first[0], first[1]],
+        "b": [second[0], second[1]],
+        "count": 0,
+        "last_ts": float(ts),
+      }
+      route_history_edges[key] = edge
+    edge["count"] = int(edge.get("count", 0)) + 1
+    edge["last_ts"] = max(edge.get("last_ts", float(ts)), float(ts))
+    updated_keys.add(key)
+
+  if not new_entries:
+    return [], []
+
+  route_history_segments.extend(new_entries)
+  _append_route_history_file(new_entries)
+
+  updates = [route_history_edges[key] for key in updated_keys if key in route_history_edges]
+  removed: List[str] = []
+  if ROUTE_HISTORY_MAX_SEGMENTS > 0 and len(route_history_segments) > ROUTE_HISTORY_MAX_SEGMENTS:
+    extra_updates, extra_removed = _prune_route_history(force_limit=True)
+    updates.extend(extra_updates)
+    removed.extend(extra_removed)
+
+  return updates, removed
+
+
+def _prune_route_history(force_limit: bool = False) -> Tuple[List[Dict[str, Any]], List[str]]:
+  global route_history_compact
+  if not ROUTE_HISTORY_ENABLED or not route_history_segments:
+    return [], []
+
+  updated: Dict[str, Dict[str, Any]] = {}
+  removed: List[str] = []
+  now = time.time()
+  cutoff = now - (ROUTE_HISTORY_HOURS * 3600)
+
+  while route_history_segments:
+    entry = route_history_segments[0]
+    if not isinstance(entry, dict):
+      route_history_segments.popleft()
+      continue
+    ts = entry.get("ts")
+    if ts is None:
+      route_history_segments.popleft()
+      continue
+    if not force_limit and ts >= cutoff:
+      break
+    if force_limit and ROUTE_HISTORY_MAX_SEGMENTS > 0 and len(route_history_segments) <= ROUTE_HISTORY_MAX_SEGMENTS:
+      break
+    route_history_segments.popleft()
+    a = entry.get("a")
+    b = entry.get("b")
+    a_point = _normalize_history_point(a) if a else None
+    b_point = _normalize_history_point(b) if b else None
+    if not a_point or not b_point:
+      route_history_compact = True
+      continue
+    key, _, _ = _history_edge_key(a_point, b_point)
+    edge = route_history_edges.get(key)
+    if not edge:
+      route_history_compact = True
+      continue
+    edge["count"] = int(edge.get("count", 0)) - 1
+    if edge["count"] <= 0:
+      route_history_edges.pop(key, None)
+      removed.append(key)
+    else:
+      updated[key] = edge
+    route_history_compact = True
+
+  return list(updated.values()), removed
+
+
+def _append_route_history_file(entries: List[Dict[str, Any]]) -> None:
+  if not ROUTE_HISTORY_ENABLED or not ROUTE_HISTORY_FILE:
+    return
+  if not entries:
+    return
+  try:
+    os.makedirs(os.path.dirname(ROUTE_HISTORY_FILE), exist_ok=True)
+    with open(ROUTE_HISTORY_FILE, "a", encoding="utf-8") as handle:
+      for entry in entries:
+        handle.write(json.dumps(entry) + "\n")
+  except Exception as exc:
+    print(f"[history] failed to append {ROUTE_HISTORY_FILE}: {exc}")
+
+
+def _load_route_history() -> None:
+  global route_history_compact
+  if not ROUTE_HISTORY_ENABLED or not ROUTE_HISTORY_FILE:
+    return
+  if not os.path.exists(ROUTE_HISTORY_FILE):
+    return
+
+  cutoff = time.time() - (ROUTE_HISTORY_HOURS * 3600)
+  loaded_any = False
+
+  try:
+    with open(ROUTE_HISTORY_FILE, "r", encoding="utf-8") as handle:
+      for line in handle:
+        line = line.strip()
+        if not line:
+          continue
+        try:
+          entry = json.loads(line)
+        except json.JSONDecodeError:
+          route_history_compact = True
+          continue
+        if not isinstance(entry, dict):
+          route_history_compact = True
+          continue
+        ts = entry.get("ts")
+        if not isinstance(ts, (int, float)) or ts < cutoff:
+          route_history_compact = True
+          continue
+        a_point = _normalize_history_point(entry.get("a"))
+        b_point = _normalize_history_point(entry.get("b"))
+        if not a_point or not b_point:
+          route_history_compact = True
+          continue
+        key, first, second = _history_edge_key(a_point, b_point)
+        route_history_segments.append({
+          "ts": float(ts),
+          "a": [first[0], first[1]],
+          "b": [second[0], second[1]],
+        })
+        edge = route_history_edges.get(key)
+        if not edge:
+          edge = {
+            "id": key,
+            "a": [first[0], first[1]],
+            "b": [second[0], second[1]],
+            "count": 0,
+            "last_ts": float(ts),
+          }
+          route_history_edges[key] = edge
+        edge["count"] = int(edge.get("count", 0)) + 1
+        edge["last_ts"] = max(edge.get("last_ts", float(ts)), float(ts))
+        loaded_any = True
+  except Exception as exc:
+    print(f"[history] failed to load {ROUTE_HISTORY_FILE}: {exc}")
+    return
+
+  if not loaded_any:
+    return
+
+  if ROUTE_HISTORY_MAX_SEGMENTS > 0 and len(route_history_segments) > ROUTE_HISTORY_MAX_SEGMENTS:
+    _prune_route_history(force_limit=True)
+    route_history_compact = True
+
+
+async def _route_history_saver() -> None:
+  global route_history_compact, route_history_last_compact
+  if not ROUTE_HISTORY_ENABLED or not ROUTE_HISTORY_FILE:
+    return
+  while True:
+    await asyncio.sleep(max(5.0, ROUTE_HISTORY_COMPACT_INTERVAL))
+    if not route_history_compact:
+      continue
+    now = time.time()
+    if now - route_history_last_compact < ROUTE_HISTORY_COMPACT_INTERVAL:
+      continue
+    try:
+      os.makedirs(os.path.dirname(ROUTE_HISTORY_FILE), exist_ok=True)
+      tmp_path = f"{ROUTE_HISTORY_FILE}.tmp"
+      with open(tmp_path, "w", encoding="utf-8") as handle:
+        for entry in route_history_segments:
+          if not isinstance(entry, dict):
+            continue
+          handle.write(json.dumps(entry) + "\n")
+      os.replace(tmp_path, ROUTE_HISTORY_FILE)
+      route_history_last_compact = now
+      route_history_compact = False
+    except Exception as exc:
+      print(f"[history] failed to compact {ROUTE_HISTORY_FILE}: {exc}")
 
 
 def _has_location_hints(obj: Any) -> bool:
@@ -1415,6 +1738,7 @@ def mqtt_on_message(client, userdata, msg: mqtt.MQTTMessage):
   if dev_guess and _topic_marks_online(msg.topic):
     now = time.time()
     seen_devices[dev_guess] = now
+    mqtt_seen[dev_guess] = now
     if dev_guess in devices:
       last_sent = last_seen_broadcast.get(dev_guess, 0)
       if now - last_sent >= MQTT_SEEN_BROADCAST_MIN_SECONDS:
@@ -1424,6 +1748,7 @@ def mqtt_on_message(client, userdata, msg: mqtt.MQTTMessage):
           "type": "device_seen",
           "device_id": dev_guess,
           "last_seen_ts": now,
+          "mqtt_seen_ts": now,
         })
 
   parsed, debug = _try_parse_payload(msg.topic, msg.payload)
@@ -1654,11 +1979,15 @@ async def broadcaster():
       state = devices.get(device_id)
       if state:
         seen_ts = event.get("last_seen_ts") or time.time()
+        mqtt_ts = event.get("mqtt_seen_ts")
         seen_devices[device_id] = seen_ts
+        if mqtt_ts:
+          mqtt_seen[device_id] = mqtt_ts
         payload = {
           "type": "device_seen",
           "device_id": device_id,
           "last_seen_ts": seen_ts,
+          "mqtt_seen_ts": mqtt_ts,
         }
         dead = []
         for ws in list(clients):
@@ -1710,7 +2039,9 @@ async def broadcaster():
       _append_heat_points(points, route["ts"], event.get("payload_type"))
       routes[route_id] = route
 
-      payload = {"type": "route", "route": route}
+      history_updates, history_removed = _record_route_history(route)
+
+      payload = {"type": "route", "route": _route_payload(route)}
       dead = []
       for ws in list(clients):
         try:
@@ -1719,6 +2050,26 @@ async def broadcaster():
           dead.append(ws)
       for ws in dead:
         clients.discard(ws)
+      if history_updates or history_removed:
+        history_payload = {}
+        if history_updates:
+          history_payload["type"] = "history_edges"
+          history_payload["edges"] = history_updates
+        if history_removed:
+          history_payload_remove = {"type": "history_edges_remove", "edge_ids": history_removed}
+        else:
+          history_payload_remove = None
+        dead = []
+        for ws in list(clients):
+          try:
+            if history_updates:
+              await ws.send_text(json.dumps(history_payload))
+            if history_payload_remove:
+              await ws.send_text(json.dumps(history_payload_remove))
+          except Exception:
+            dead.append(ws)
+        for ws in dead:
+          clients.discard(ws)
       continue
 
     upd = event.get("data") if isinstance(event, dict) and event.get("type") == "device" else event
@@ -1824,6 +2175,20 @@ async def reaper():
       for route_id in stale_routes:
         routes.pop(route_id, None)
 
+    history_updates, history_removed = _prune_route_history()
+    if history_updates or history_removed:
+      dead = []
+      for ws in list(clients):
+        try:
+          if history_updates:
+            await ws.send_text(json.dumps({"type": "history_edges", "edges": history_updates}))
+          if history_removed:
+            await ws.send_text(json.dumps({"type": "history_edges_remove", "edge_ids": history_removed}))
+        except Exception:
+          dead.append(ws)
+      for ws in dead:
+        clients.discard(ws)
+
     if HEAT_TTL_SECONDS > 0 and heat_events:
       cutoff = now - HEAT_TTL_SECONDS
       heat_events = [entry for entry in heat_events if entry.get("ts", 0) >= cutoff]
@@ -1869,6 +2234,8 @@ def root():
     "SITE_URL": SITE_URL,
     "SITE_ICON": SITE_ICON,
     "SITE_FEED_NOTE": SITE_FEED_NOTE,
+    "PROD_MODE": str(PROD_MODE).lower(),
+    "PROD_TOKEN": PROD_TOKEN,
     "MAP_START_LAT": MAP_START_LAT,
     "MAP_START_LON": MAP_START_LON,
     "MAP_START_ZOOM": MAP_START_ZOOM,
@@ -1888,11 +2255,14 @@ def root():
 
 
 @app.get("/snapshot")
-def snapshot():
+def snapshot(request: Request):
+  _require_prod_token(request)
   return {
     "devices": {k: _device_payload(k, v) for k, v in devices.items()},
     "trails": trails,
-    "routes": list(routes.values()),
+    "routes": [_route_payload(r) for r in routes.values()],
+    "history_edges": [_history_edge_payload(e) for e in route_history_edges.values()],
+    "history_window_seconds": int(max(0, ROUTE_HISTORY_HOURS * 3600)),
     "heat": _serialize_heat_events(),
     "server_time": time.time(),
   }
@@ -1900,12 +2270,31 @@ def snapshot():
 
 @app.get("/stats")
 def get_stats():
+  if PROD_MODE:
+    return {
+      "stats": {
+        "received_total": stats.get("received_total"),
+        "parsed_total": stats.get("parsed_total"),
+        "unparsed_total": stats.get("unparsed_total"),
+        "last_rx_ts": stats.get("last_rx_ts"),
+        "last_parsed_ts": stats.get("last_parsed_ts"),
+      },
+      "result_counts": result_counts,
+      "mapped_devices": len(devices),
+      "route_count": len(routes),
+      "history_edge_count": len(route_history_edges),
+      "seen_devices": len(seen_devices),
+      "server_time": time.time(),
+    }
+
   top_topics = sorted(topic_counts.items(), key=lambda kv: kv[1], reverse=True)[:20]
   return {
     "stats": stats,
     "result_counts": result_counts,
     "mapped_devices": len(devices),
     "route_count": len(routes),
+    "history_edge_count": len(route_history_edges),
+    "history_segments": len(route_history_segments),
     "seen_devices": len(seen_devices),
     "seen_recent": sorted(seen_devices.items(), key=lambda kv: kv[1], reverse=True)[:20],
     "top_topics": top_topics,
@@ -1988,6 +2377,8 @@ def line_of_sight(lat1: float, lon1: float, lat2: float, lon2: float, profile: b
 
 @app.get("/debug/last")
 def debug_last_entries():
+  if PROD_MODE:
+    raise HTTPException(status_code=404, detail="not_found")
   return {
     "count": len(debug_last),
     "items": list(reversed(list(debug_last))),
@@ -1997,6 +2388,8 @@ def debug_last_entries():
 
 @app.get("/debug/status")
 def debug_status_entries():
+  if PROD_MODE:
+    raise HTTPException(status_code=404, detail="not_found")
   return {
     "count": len(status_last),
     "items": list(reversed(list(status_last))),
@@ -2006,6 +2399,10 @@ def debug_status_entries():
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+  if not _ws_authorized(ws):
+    await ws.accept()
+    await ws.close(code=1008)
+    return
   await ws.accept()
   clients.add(ws)
 
@@ -2013,7 +2410,9 @@ async def ws_endpoint(ws: WebSocket):
     "type": "snapshot",
     "devices": {k: _device_payload(k, v) for k, v in devices.items()},
     "trails": trails,
-    "routes": list(routes.values()),
+    "routes": [_route_payload(r) for r in routes.values()],
+    "history_edges": [_history_edge_payload(e) for e in route_history_edges.values()],
+    "history_window_seconds": int(max(0, ROUTE_HISTORY_HOURS * 3600)),
     "heat": _serialize_heat_events(),
   }))
 
@@ -2036,6 +2435,7 @@ async def startup():
   global mqtt_client
 
   _load_state()
+  _load_route_history()
   _ensure_node_decoder()
 
   loop = asyncio.get_event_loop()
@@ -2077,6 +2477,7 @@ async def startup():
   asyncio.create_task(broadcaster())
   asyncio.create_task(reaper())
   asyncio.create_task(_state_saver())
+  asyncio.create_task(_route_history_saver())
 
 
 @app.on_event("shutdown")

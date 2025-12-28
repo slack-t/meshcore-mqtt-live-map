@@ -33,10 +33,12 @@
       border-radius: 10px;
       font-family: ui-sans-serif, system-ui, sans-serif;
       z-index: 999;
+      width: min(340px, calc(100vw - 20px));
       max-width: 340px;
       max-height: 90vh;
       overflow-y: auto;
       overflow-x: hidden;
+      box-sizing: border-box;
     }
     .hud-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .hud-brand { display: flex; align-items: center; gap: 8px; }
@@ -67,6 +69,15 @@
     .legend-trace { border-color: #ff7a1a; border-top-style: dashed; }
     .legend-message { border-color: #2b8cff; border-top-style: dashed; }
     .legend-advert { border-color: #2ecc71; border-top-style: dotted; }
+    .legend-history { border-color: #7dd3fc; border-top-style: solid; }
+    .legend-history-swatch {
+      width: 36px;
+      height: 8px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, #7dd3fc, #f59e0b, #ef4444);
+      border: 1px solid rgba(255,255,255,.25);
+      display: inline-block;
+    }
     .legend-los-clear { border-color: #22c55e; border-top-style: solid; }
     .legend-los-blocked { border-color: #ef4444; border-top-style: dashed; }
     .legend-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid; display: inline-block; }
@@ -104,6 +115,7 @@
     .node-search {
       margin-top: 6px;
       position: relative;
+      width: 100%;
     }
     .node-search-input {
       width: 100%;
@@ -114,6 +126,7 @@
       background: rgba(15,23,42,.6);
       color: #fff;
       outline: none;
+      box-sizing: border-box;
     }
     .node-search-input::placeholder { color: rgba(255,255,255,.65); }
     .node-search-results {
@@ -298,6 +311,7 @@
         </svg>
       </a>
     </div>
+    <div class="small">MeshCore node map.</div>
     <div class="small">Markers update in real time. Trails show last ~50 points.</div>
     <div class="small">{{SITE_FEED_NOTE}}</div>
     <div class="small" id="stats"></div>
@@ -317,6 +331,7 @@
     <button class="map-toggle" id="los-toggle" type="button">LOS tool</button>
     <button class="map-toggle" id="labels-toggle" type="button">Labels Off</button>
     <button class="map-toggle" id="nodes-toggle" type="button">Hide nodes</button>
+    <button class="map-toggle" id="history-toggle" type="button">Hide history</button>
     <button class="map-toggle" id="prop-toggle" type="button">Propagation</button>
     <div class="prop-panel" id="prop-panel">
       <div class="small"><strong>Propagation estimate</strong></div>
@@ -410,6 +425,10 @@
       <div class="legend-item"><span class="legend-line legend-trace"></span> Trace/path</div>
       <div class="legend-item"><span class="legend-line legend-message"></span> Message</div>
       <div class="legend-item"><span class="legend-line legend-advert"></span> Advert</div>
+      <div class="legend-item">
+        <span class="legend-history-swatch"></span>
+        <span id="history-window-label">History (24h • volume)</span>
+      </div>
       <div class="legend-item"><span class="legend-line legend-los-clear"></span> LOS clear</div>
       <div class="legend-item"><span class="legend-line legend-los-blocked"></span> LOS blocked</div>
       <div class="legend-item"><span class="legend-heat"></span> Heat (last 10 min)</div>
@@ -453,6 +472,16 @@
       baseLayer = storedLayer;
     }
 
+    const prodMode = '{{PROD_MODE}}' === 'true';
+    const apiToken = '{{PROD_TOKEN}}';
+    const tokenHeaders = () => (prodMode && apiToken ? { 'x-access-token': apiToken } : {});
+    const withToken = (path) => {
+      if (!prodMode || !apiToken) return path;
+      const url = new URL(path, window.location.origin);
+      url.searchParams.set('token', apiToken);
+      return `${url.pathname}${url.search}`;
+    };
+
     const markers = new Map();   // device_id -> Leaflet marker
     const polylines = new Map(); // device_id -> Leaflet polyline
     const markerLayer = L.layerGroup().addTo(map);
@@ -460,6 +489,8 @@
     let nodesVisible = true;
     const routeLines = new Map(); // route_id -> { line, timeout }
     const deviceMeta = new Map(); // device_id -> { lat, lon, name }
+    const historyLines = new Map(); // edge_id -> { line, count }
+    const historyLayer = L.layerGroup();
     const routeLayer = L.layerGroup().addTo(map);
     const losElevationUrl = '{{LOS_ELEVATION_URL}}';
     const losSampleMin = Number('{{LOS_SAMPLE_MIN}}') || 10;
@@ -495,6 +526,13 @@
     let showLabels = storedLabels === 'true';
     if (storedLabels === null) {
       localStorage.setItem('meshmapShowLabels', 'false');
+    }
+    const historyLabel = document.getElementById('history-window-label');
+    let historyWindowSeconds = null;
+    const storedHistory = localStorage.getItem('meshmapShowHistory');
+    let historyVisible = storedHistory === 'true';
+    if (storedHistory === null) {
+      localStorage.setItem('meshmapShowHistory', 'false');
     }
     const mqttWindowLabel = document.getElementById('mqtt-online-label');
     if (mqttWindowLabel) {
@@ -574,7 +612,7 @@
 
     function setStats() {
       const onlineCount = Array.from(deviceData.values()).filter(isMqttOnline).length;
-      document.getElementById('stats').textContent = `${markers.size} active devices • ${onlineCount} MQTT online • ${routeLines.size} routes`;
+      document.getElementById('stats').textContent = `${markers.size} active devices • ${onlineCount} MQTT online • ${routeLines.size} routes • ${historyLines.size} history`;
     }
 
     function formatOnlineWindow(seconds) {
@@ -601,13 +639,57 @@
         if (!map.hasLayer(trailLayer)) {
           trailLayer.addTo(map);
         }
+        if (!map.hasLayer(routeLayer)) {
+          routeLayer.addTo(map);
+        }
+        if (historyVisible && !map.hasLayer(historyLayer)) {
+          historyLayer.addTo(map);
+        }
+        if (!map.hasLayer(heatLayer)) {
+          heatLayer.addTo(map);
+        }
       } else if (map.hasLayer(markerLayer)) {
         map.removeLayer(markerLayer);
         if (map.hasLayer(trailLayer)) {
           map.removeLayer(trailLayer);
         }
+        if (map.hasLayer(routeLayer)) {
+          map.removeLayer(routeLayer);
+        }
+        if (map.hasLayer(historyLayer)) {
+          map.removeLayer(historyLayer);
+        }
+        if (map.hasLayer(heatLayer)) {
+          map.removeLayer(heatLayer);
+        }
       } else if (map.hasLayer(trailLayer)) {
         map.removeLayer(trailLayer);
+      } else {
+        if (map.hasLayer(routeLayer)) {
+          map.removeLayer(routeLayer);
+        }
+        if (map.hasLayer(historyLayer)) {
+          map.removeLayer(historyLayer);
+        }
+        if (map.hasLayer(heatLayer)) {
+          map.removeLayer(heatLayer);
+        }
+      }
+    }
+
+    function setHistoryVisible(visible) {
+      historyVisible = visible;
+      const btn = document.getElementById('history-toggle');
+      if (btn) {
+        btn.classList.toggle('active', visible);
+        btn.textContent = visible ? 'Hide history' : 'Show history';
+      }
+      if (visible) {
+        if (!map.hasLayer(historyLayer)) {
+          historyLayer.addTo(map);
+        }
+      } else if (map.hasLayer(historyLayer)) {
+        map.removeLayer(historyLayer);
       }
     }
 
@@ -631,7 +713,7 @@
     }
 
     function isMqttOnline(d) {
-      const lastSeen = getLastSeenTs(d);
+      const lastSeen = d.mqtt_seen_ts || null;
       if (!lastSeen) return false;
       return (Date.now() / 1000 - lastSeen) <= mqttOnlineSeconds;
     }
@@ -1078,6 +1160,7 @@
 
     function keepOverlaysAbovePropagation() {
       if (heatLayer && heatLayer.bringToFront) heatLayer.bringToFront();
+      if (historyLayer && historyLayer.bringToFront) historyLayer.bringToFront();
       if (routeLayer && routeLayer.bringToFront) routeLayer.bringToFront();
       if (trailLayer && trailLayer.bringToFront) trailLayer.bringToFront();
       if (markerLayer && markerLayer.bringToFront) markerLayer.bringToFront();
@@ -2362,6 +2445,99 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       setStats();
     }
 
+    function removeHistoryEdges(ids) {
+      ids.forEach(id => {
+        const entry = historyLines.get(id);
+        if (!entry) return;
+        historyLayer.removeLayer(entry.line);
+        historyLines.delete(id);
+      });
+      refreshHistoryStyles();
+      setStats();
+    }
+
+    function historyWeight(count) {
+      const n = Math.max(1, Number(count) || 1);
+      return Math.min(10, 1.5 + Math.log1p(n) * 2);
+    }
+
+    function computeHistoryThresholds() {
+      const counts = [];
+      historyLines.forEach(entry => {
+        if (entry && Number.isFinite(entry.count)) {
+          counts.push(entry.count);
+        }
+      });
+      if (!counts.length) {
+        return { p70: null, p90: null };
+      }
+      counts.sort((a, b) => a - b);
+      const pick = (pct) => {
+        const idx = Math.max(0, Math.min(counts.length - 1, Math.floor(pct * (counts.length - 1))));
+        return counts[idx];
+      };
+      return { p70: pick(0.7), p90: pick(0.9) };
+    }
+
+    function historyColor(count, thresholds) {
+      if (!thresholds || thresholds.p90 == null || thresholds.p70 == null) {
+        return '#7dd3fc';
+      }
+      if (count >= thresholds.p90) return '#ef4444';
+      if (count >= thresholds.p70) return '#f59e0b';
+      return '#7dd3fc';
+    }
+
+    function refreshHistoryStyles() {
+      const thresholds = computeHistoryThresholds();
+      historyLines.forEach(entry => {
+        if (!entry || !entry.line) return;
+        const count = Number(entry.count) || 1;
+        entry.line.setStyle({
+          color: historyColor(count, thresholds),
+          weight: historyWeight(count),
+          opacity: 0.6,
+          lineCap: 'round',
+          lineJoin: 'round'
+        });
+      });
+    }
+
+    function upsertHistoryEdge(edge) {
+      if (!edge || !Array.isArray(edge.a) || !Array.isArray(edge.b)) return;
+      const id = edge.id || `${edge.a.join(',')}-${edge.b.join(',')}`;
+      const points = [
+        [edge.a[0], edge.a[1]],
+        [edge.b[0], edge.b[1]]
+      ];
+      let entry = historyLines.get(id);
+      if (!entry) {
+        const line = L.polyline(points, { color: '#7dd3fc', weight: 2, opacity: 0.6 }).addTo(historyLayer);
+        entry = { line, count: Number(edge.count) || 1 };
+        historyLines.set(id, entry);
+      } else {
+        entry.line.setLatLngs(points);
+        entry.count = Number(edge.count) || entry.count || 1;
+      }
+      refreshHistoryStyles();
+    }
+
+    function updateHistoryWindowLabel(seconds) {
+      if (!historyLabel) return;
+      if (!seconds || seconds <= 0) {
+        historyLabel.textContent = 'History';
+        return;
+      }
+      const hours = seconds / 3600;
+      if (hours >= 24) {
+        historyLabel.textContent = `History (${Math.round(hours)}h)`;
+      } else if (hours >= 1) {
+        historyLabel.textContent = `History (${Math.round(hours * 10) / 10}h)`;
+      } else {
+        historyLabel.textContent = `History (${Math.max(1, Math.round(seconds / 60))}m)`;
+      }
+    }
+
     function refreshHeatLayer() {
       const now = Date.now();
       const cutoff = now - HEAT_TTL_MS;
@@ -2452,7 +2628,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     async function initialSnapshot() {
       try {
-        const res = await fetch('/snapshot');
+        const res = await fetch(withToken('/snapshot'), { headers: tokenHeaders() });
         const snap = await res.json();
         if (snap.devices) {
           for (const [id, d] of Object.entries(snap.devices)) {
@@ -2466,6 +2642,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         if (Array.isArray(snap.routes)) {
           snap.routes.forEach(r => upsertRoute(r, true));
         }
+        if (Array.isArray(snap.history_edges)) {
+          snap.history_edges.forEach(edge => upsertHistoryEdge(edge));
+        }
+        if (snap.history_window_seconds != null) {
+          historyWindowSeconds = Number(snap.history_window_seconds);
+          updateHistoryWindowLabel(historyWindowSeconds);
+        }
+        setStats();
       } catch (e) {
         console.warn("snapshot failed", e);
       }
@@ -2473,7 +2657,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     function connectWS() {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      const wsSuffix = (prodMode && apiToken) ? `?token=${encodeURIComponent(apiToken)}` : '';
+      const ws = new WebSocket(`${proto}://${location.host}/ws${wsSuffix}`);
 
       ws.onopen = () => console.log("ws connected");
       ws.onclose = () => {
@@ -2493,11 +2678,19 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
           if (Array.isArray(msg.heat)) {
             seedHeat(msg.heat);
           }
-          if (Array.isArray(msg.routes)) {
-            msg.routes.forEach(r => upsertRoute(r, true));
-          }
-          return;
+        if (Array.isArray(msg.routes)) {
+          msg.routes.forEach(r => upsertRoute(r, true));
         }
+        if (Array.isArray(msg.history_edges)) {
+          msg.history_edges.forEach(edge => upsertHistoryEdge(edge));
+        }
+        if (msg.history_window_seconds != null) {
+          historyWindowSeconds = Number(msg.history_window_seconds);
+          updateHistoryWindowLabel(historyWindowSeconds);
+        }
+        setStats();
+        return;
+      }
 
         if (msg.type === "update") {
           upsertDevice(msg.device, msg.trail);
@@ -2508,7 +2701,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
           const id = msg.device_id;
           const d = deviceData.get(id);
           if (d) {
-            d.last_seen_ts = msg.last_seen_ts;
+            if (msg.last_seen_ts) d.last_seen_ts = msg.last_seen_ts;
+            if (msg.mqtt_seen_ts) d.mqtt_seen_ts = msg.mqtt_seen_ts;
             deviceData.set(id, d);
             const m = markers.get(id);
             if (m) {
@@ -2528,6 +2722,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         if (msg.type === "route_remove") {
           removeRoutes(msg.route_ids || []);
+          return;
+        }
+
+        if (msg.type === "history_edges") {
+          const edges = Array.isArray(msg.edges) ? msg.edges : [];
+          edges.forEach(edge => upsertHistoryEdge(edge));
+          setStats();
+          return;
+        }
+
+        if (msg.type === "history_edges_remove") {
+          removeHistoryEdges(msg.edge_ids || []);
           return;
         }
 
@@ -2703,6 +2909,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       nodesToggle.addEventListener('click', () => {
         setNodesVisible(!nodesVisible);
         localStorage.setItem('meshmapNodesVisible', nodesVisible ? 'true' : 'false');
+      });
+    }
+
+    const historyToggle = document.getElementById('history-toggle');
+    if (historyToggle) {
+      const storedHistoryVisible = localStorage.getItem('meshmapShowHistory');
+      if (storedHistoryVisible !== null) {
+        setHistoryVisible(storedHistoryVisible === 'true');
+      } else {
+        setHistoryVisible(false);
+      }
+      historyToggle.addEventListener('click', () => {
+        setHistoryVisible(!historyVisible);
+        localStorage.setItem('meshmapShowHistory', historyVisible ? 'true' : 'false');
       });
     }
 

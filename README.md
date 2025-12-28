@@ -12,6 +12,7 @@ Live example: https://live.bostonme.sh/
 - Animated route/trace lines and message fanout
 - Heat map for the last 10 minutes of message activity (includes adverts)
 - Persistent device state and trails
+- 24-hour route history overlay (toggle) with volume-based coloring
 - UI controls: legend toggle, dark map, topo map, labels toggle, hide nodes
 - Node search by name or public key
 - LOS tool with elevation profile + peak markers and hover sync
@@ -64,8 +65,15 @@ Runtime tuning:
 - `DEVICE_TTL_SECONDS` (node expiry)
 - `TRAIL_LEN` (points per device trail)
 - `ROUTE_TTL_SECONDS`
+- `ROUTE_PAYLOAD_TYPES` (packet types used for live routes)
 - `HEAT_TTL_SECONDS`
 - `MESSAGE_ORIGIN_TTL_SECONDS`
+- `ROUTE_HISTORY_ENABLED`
+- `ROUTE_HISTORY_HOURS`
+- `ROUTE_HISTORY_MAX_SEGMENTS`
+- `ROUTE_HISTORY_COMPACT_INTERVAL`
+- `ROUTE_HISTORY_FILE`
+- `ROUTE_HISTORY_PAYLOAD_TYPES`
 - `MQTT_ONLINE_SECONDS` (online window for status ring)
 - `MQTT_ONLINE_TOPIC_SUFFIXES` (comma-separated topics that count as “online”)
 - `DEBUG_PAYLOAD` (verbose decoding logs)
