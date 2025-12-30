@@ -52,6 +52,7 @@ ROUTE_HISTORY_MAX_SEGMENTS = int(os.getenv("ROUTE_HISTORY_MAX_SEGMENTS", "40000"
 ROUTE_HISTORY_FILE = os.getenv("ROUTE_HISTORY_FILE", os.path.join(STATE_DIR, "route_history.jsonl"))
 ROUTE_HISTORY_PAYLOAD_TYPES = os.getenv("ROUTE_HISTORY_PAYLOAD_TYPES", ROUTE_PAYLOAD_TYPES)
 ROUTE_HISTORY_COMPACT_INTERVAL = float(os.getenv("ROUTE_HISTORY_COMPACT_INTERVAL", "120"))
+HISTORY_EDGE_SAMPLE_LIMIT = 3
 MESSAGE_ORIGIN_TTL_SECONDS = int(os.getenv("MESSAGE_ORIGIN_TTL_SECONDS", "300"))
 HEAT_TTL_SECONDS = int(os.getenv("HEAT_TTL_SECONDS", "600"))
 MQTT_ONLINE_SECONDS = int(os.getenv("MQTT_ONLINE_SECONDS", "300"))
@@ -393,14 +394,27 @@ def _node_hash_from_device_id(device_id: str) -> Optional[str]:
   return _normalize_node_hash(device_id[:2])
 
 
-def _route_points_from_hashes(path_hashes: List[Any], receiver_id: Optional[str]) -> Tuple[Optional[List[List[float]]], List[str]]:
+def _route_points_from_hashes(path_hashes: List[Any], origin_id: Optional[str], receiver_id: Optional[str]) -> Tuple[Optional[List[List[float]]], List[str]]:
+  normalized: List[str] = []
+  for raw in path_hashes:
+    key = _normalize_node_hash(raw)
+    if key:
+      normalized.append(key)
+
+  receiver_hash = _node_hash_from_device_id(receiver_id) if receiver_id else None
+  origin_hash = _node_hash_from_device_id(origin_id) if origin_id else None
+
+  if receiver_hash and receiver_hash in normalized:
+    if normalized and normalized[0] == receiver_hash and normalized[-1] != receiver_hash:
+      normalized.reverse()
+  elif origin_hash and origin_hash in normalized:
+    if normalized and normalized[-1] == origin_hash and normalized[0] != origin_hash:
+      normalized.reverse()
+
   points: List[List[float]] = []
   used_hashes: List[str] = []
 
-  for raw in path_hashes:
-    key = _normalize_node_hash(raw)
-    if not key:
-      continue
+  for key in normalized:
     device_id = node_hash_to_device.get(key)
     if not device_id:
       continue
@@ -415,16 +429,23 @@ def _route_points_from_hashes(path_hashes: List[Any], receiver_id: Optional[str]
     points.append(point)
     used_hashes.append(key)
 
+  origin_point = None
+  if origin_id:
+    origin_state = devices.get(origin_id)
+    if origin_state and not _coords_are_zero(origin_state.lat, origin_state.lon):
+      origin_point = [origin_state.lat, origin_state.lon]
+      if not points or points[0] != origin_point:
+        points.insert(0, origin_point)
+
+  receiver_point = None
+  if receiver_id:
+    receiver_state = devices.get(receiver_id)
+    if receiver_state and not _coords_are_zero(receiver_state.lat, receiver_state.lon):
+      receiver_point = [receiver_state.lat, receiver_state.lon]
+      if points and receiver_point != points[-1]:
+        points.append(receiver_point)
+
   if len(points) < 2:
-    if points and receiver_id:
-      receiver_state = devices.get(receiver_id)
-      if receiver_state:
-        if _coords_are_zero(receiver_state.lat, receiver_state.lon):
-          return None, used_hashes
-        receiver_point = [receiver_state.lat, receiver_state.lon]
-        if receiver_point != points[0]:
-          points.append(receiver_point)
-          return points, used_hashes
     return None, used_hashes
 
   return points, used_hashes
@@ -801,6 +822,7 @@ def _history_edge_payload(edge: Dict[str, Any]) -> Dict[str, Any]:
     "b": edge.get("b"),
     "count": edge.get("count"),
     "last_ts": edge.get("last_ts"),
+    "recent": edge.get("recent") if isinstance(edge.get("recent"), list) else [],
   }
 
 
@@ -999,6 +1021,31 @@ def _history_edge_key(a: Tuple[float, float], b: Tuple[float, float]) -> Tuple[s
   return key, b, a
 
 
+def _history_sample_from_route(route: Dict[str, Any], ts: float) -> Dict[str, Any]:
+  return {
+    "ts": float(ts),
+    "message_hash": route.get("message_hash"),
+    "payload_type": route.get("payload_type"),
+    "origin_id": route.get("origin_id"),
+    "receiver_id": route.get("receiver_id"),
+    "route_mode": route.get("route_mode"),
+    "topic": route.get("topic"),
+  }
+
+
+def _update_history_edge_recent(edge: Dict[str, Any], sample: Dict[str, Any]) -> None:
+  if not edge or not sample:
+    return
+  recent = edge.get("recent")
+  if not isinstance(recent, list):
+    recent = []
+  recent.append(sample)
+  recent.sort(key=lambda s: s.get("ts", 0), reverse=True)
+  if len(recent) > HISTORY_EDGE_SAMPLE_LIMIT:
+    recent = recent[:HISTORY_EDGE_SAMPLE_LIMIT]
+  edge["recent"] = recent
+
+
 def _record_route_history(route: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str]]:
   if not ROUTE_HISTORY_ENABLED:
     return [], []
@@ -1010,6 +1057,7 @@ def _record_route_history(route: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], 
     return [], []
 
   ts = route.get("ts") or time.time()
+  sample = _history_sample_from_route(route, ts)
   updated_keys: Set[str] = set()
   new_entries: List[Dict[str, Any]] = []
 
@@ -1023,6 +1071,12 @@ def _record_route_history(route: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], 
       "ts": float(ts),
       "a": [first[0], first[1]],
       "b": [second[0], second[1]],
+      "message_hash": sample.get("message_hash"),
+      "payload_type": sample.get("payload_type"),
+      "origin_id": sample.get("origin_id"),
+      "receiver_id": sample.get("receiver_id"),
+      "route_mode": sample.get("route_mode"),
+      "topic": sample.get("topic"),
     })
     edge = route_history_edges.get(key)
     if not edge:
@@ -1036,6 +1090,7 @@ def _record_route_history(route: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], 
       route_history_edges[key] = edge
     edge["count"] = int(edge.get("count", 0)) + 1
     edge["last_ts"] = max(edge.get("last_ts", float(ts)), float(ts))
+    _update_history_edge_recent(edge, sample)
     updated_keys.add(key)
 
   if not new_entries:
@@ -1091,6 +1146,11 @@ def _prune_route_history(force_limit: bool = False) -> Tuple[List[Dict[str, Any]
       route_history_compact = True
       continue
     edge["count"] = int(edge.get("count", 0)) - 1
+    recent = edge.get("recent")
+    if isinstance(recent, list):
+      edge["recent"] = [s for s in recent if (s.get("ts") or 0) >= cutoff]
+      if not edge["recent"]:
+        edge.pop("recent", None)
     if edge["count"] <= 0:
       route_history_edges.pop(key, None)
       removed.append(key)
@@ -1148,11 +1208,26 @@ def _load_route_history() -> None:
         if not a_point or not b_point:
           route_history_compact = True
           continue
+        sample = {
+          "ts": float(ts),
+          "message_hash": entry.get("message_hash"),
+          "payload_type": entry.get("payload_type"),
+          "origin_id": entry.get("origin_id"),
+          "receiver_id": entry.get("receiver_id"),
+          "route_mode": entry.get("route_mode"),
+          "topic": entry.get("topic"),
+        }
         key, first, second = _history_edge_key(a_point, b_point)
         route_history_segments.append({
           "ts": float(ts),
           "a": [first[0], first[1]],
           "b": [second[0], second[1]],
+          "message_hash": sample.get("message_hash"),
+          "payload_type": sample.get("payload_type"),
+          "origin_id": sample.get("origin_id"),
+          "receiver_id": sample.get("receiver_id"),
+          "route_mode": sample.get("route_mode"),
+          "topic": sample.get("topic"),
         })
         edge = route_history_edges.get(key)
         if not edge:
@@ -1166,6 +1241,7 @@ def _load_route_history() -> None:
           route_history_edges[key] = edge
         edge["count"] = int(edge.get("count", 0)) + 1
         edge["last_ts"] = max(edge.get("last_ts", float(ts)), float(ts))
+        _update_history_edge_recent(edge, sample)
         loaded_any = True
   except Exception as exc:
     print(f"[history] failed to load {ROUTE_HISTORY_FILE}: {exc}")
@@ -2006,7 +2082,7 @@ async def broadcaster():
 
       if not points:
         path_hashes = event.get("path_hashes") or []
-        points, used_hashes = _route_points_from_hashes(list(path_hashes), event.get("receiver_id"))
+        points, used_hashes = _route_points_from_hashes(list(path_hashes), event.get("origin_id"), event.get("receiver_id"))
 
       if not points and route_mode == "fanout":
         points = _route_points_from_device_ids(event.get("origin_id"), event.get("receiver_id"))
@@ -2054,7 +2130,7 @@ async def broadcaster():
         history_payload = {}
         if history_updates:
           history_payload["type"] = "history_edges"
-          history_payload["edges"] = history_updates
+          history_payload["edges"] = [_history_edge_payload(edge) for edge in history_updates]
         if history_removed:
           history_payload_remove = {"type": "history_edges_remove", "edge_ids": history_removed}
         else:

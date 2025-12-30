@@ -242,6 +242,8 @@
     .popup-title { display: block; font-weight: 600; }
     .popup-id { display: block; opacity: 0.85; }
     .popup-topic { display: inline-block; overflow-wrap: anywhere; word-break: break-word; }
+    .popup-sample { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(15, 23, 42, 0.15); }
+    .dark-map .popup-sample { border-top-color: rgba(255,255,255,.16); }
     .dark-map .leaflet-popup-content-wrapper {
       background: rgba(15, 23, 42, 0.96);
       color: #f8fafc;
@@ -2145,6 +2147,65 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       });
     }
 
+    function payloadTypeLabel(pt) {
+      const val = Number(pt);
+      if (val === 4) return 'Advert';
+      if (val === 8 || val === 9) return 'Trace';
+      if (val === 2 || val === 5) return 'Message';
+      return Number.isFinite(val) ? `Type ${val}` : 'Unknown';
+    }
+
+    function shortHash(hash) {
+      if (!hash) return 'unknown';
+      const text = String(hash);
+      return text.length > 10 ? `${text.slice(0, 10)}…` : text;
+    }
+
+    function deviceLabelFromId(id) {
+      if (!id) return 'Unknown';
+      const d = deviceData.get(id);
+      if (d) return deviceDisplayName(d);
+      return `${String(id).slice(0, 8)}…`;
+    }
+
+    function makeHistoryPopup(entry) {
+      const count = Number(entry && entry.count) || 1;
+      const lastSeen = entry && entry.lastTs ? formatLastContact(entry.lastTs) : 'unknown';
+      const rawSamples = entry && Array.isArray(entry.recent) ? entry.recent : [];
+      const samples = rawSamples.filter((sample) => (
+        sample && (
+          sample.message_hash || sample.origin_id || sample.receiver_id || sample.payload_type || sample.topic
+        )
+      )).slice(0, 3);
+      const sampleHtml = samples.length
+        ? samples.map((sample) => {
+          const when = sample.ts ? formatLastContact(sample.ts) : 'unknown';
+          const label = payloadTypeLabel(sample.payload_type);
+          const origin = deviceLabelFromId(sample.origin_id);
+          const receiver = deviceLabelFromId(sample.receiver_id);
+          const routeMode = sample.route_mode ? String(sample.route_mode) : 'path';
+          return `
+            <div class="popup-sample">
+              <strong>${label}</strong> • ${when}<br/>
+              Origin: ${origin}<br/>
+              Receiver: ${receiver}<br/>
+              Route: ${routeMode}<br/>
+              Hash: ${shortHash(sample.message_hash)}
+            </div>
+          `;
+        }).join('')
+        : '<div class="popup-sample">No packet details yet.</div>';
+
+      return `
+        <span class="popup-title">History edge</span>
+        <span class="small">
+          Count: ${count}<br/>
+          Last Seen: ${lastSeen}<br/>
+          ${sampleHtml}
+        </span>
+      `;
+    }
+
     function haversineMeters(lat1, lon1, lat2, lon2) {
       const R = 6371000;
       const toRad = (deg) => (deg * Math.PI) / 180;
@@ -2541,12 +2602,23 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       let entry = historyLines.get(id);
       if (!entry) {
         const line = L.polyline(points, { color: '#7dd3fc', weight: 2, opacity: 0.6 }).addTo(historyLayer);
-        entry = { line, count: Number(edge.count) || 1 };
+        entry = { line, count: Number(edge.count) || 1, recent: [], lastTs: null };
         historyLines.set(id, entry);
+        line.on('click', (ev) => {
+          const popup = makeHistoryPopup(entry);
+          line.bindPopup(popup, {
+            maxWidth: 300,
+            autoPan: true,
+            keepInView: true,
+            autoPanPadding: [18, 18]
+          }).openPopup(ev.latlng);
+        });
       } else {
         entry.line.setLatLngs(points);
         entry.count = Number(edge.count) || entry.count || 1;
       }
+      entry.recent = Array.isArray(edge.recent) ? edge.recent : [];
+      entry.lastTs = edge.last_ts || entry.lastTs;
       refreshHistoryStyles();
     }
 
