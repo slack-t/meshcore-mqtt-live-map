@@ -133,6 +133,24 @@ Use it:
 - Dark map also darkens node popups for readability.
 - Route styling uses payload type: 2/5 = Message (blue), 8/9 = Trace (orange), 4 = Advert (green).
 
+## API
+The backend exposes a nodes API for external tools (e.g. MeshBuddy):
+
+- `GET /api/nodes?token=YOUR_TOKEN`
+  - Default response: `{"data":{"nodes":[...]}}`
+  - Optional: `format=flat` returns `{"data":[...]}`
+  - Optional: `mode=delta` applies `updated_since` filtering
+
+Example:
+```
+https://your-host/api/nodes?token=YOUR_TOKEN
+https://your-host/api/nodes?token=YOUR_TOKEN&mode=delta&updated_since=2025-01-01T12:00:00Z
+https://your-host/api/nodes?token=YOUR_TOKEN&format=flat
+```
+
+Each node includes:
+`public_key`, `name`, `device_role` (1/2/3), `last_seen` (ISO), `timestamp` (epoch), and `location` with `latitude`/`longitude`.
+
 ## License
 [GPL-3.0](https://github.com/yellowcooln/meshcore-mqtt-live-map?tab=License-1-ov-file#).
 
