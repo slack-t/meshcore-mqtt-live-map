@@ -18,6 +18,7 @@ Live example: https://live.bostonme.sh/
 - LOS tool with elevation profile + peak markers and hover sync (Shift+click or long‑press nodes)
 - Embeddable metadata (Open Graph/Twitter tags) driven by env vars
 - Propagation panel lives on the right and keeps the last render until you generate a new one
+- Installable PWA (manifest + service worker) for Add to Home Screen
 
 ## Project Structure
 - `backend/app.py`: FastAPI server, MQTT ingest, MeshCore decoding, persistence

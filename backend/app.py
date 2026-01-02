@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional, Set, Tuple, List, Deque
 
 import paho.mqtt.client as mqtt
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 # =========================
@@ -2469,6 +2469,47 @@ def root():
     content = content.replace(f"{{{{{key}}}}}", safe_value)
 
   return HTMLResponse(content)
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+  icons = []
+  if SITE_ICON:
+    icons = [
+      {
+        "src": SITE_ICON,
+        "sizes": "192x192",
+        "type": "image/png",
+        "purpose": "any"
+      },
+      {
+        "src": SITE_ICON,
+        "sizes": "512x512",
+        "type": "image/png",
+        "purpose": "any maskable"
+      }
+    ]
+  short_name = SITE_TITLE if len(SITE_TITLE) <= 12 else SITE_TITLE[:12]
+  return JSONResponse(
+    {
+      "name": SITE_TITLE,
+      "short_name": short_name,
+      "description": SITE_DESCRIPTION,
+      "start_url": "/",
+      "scope": "/",
+      "display": "standalone",
+      "display_override": ["standalone", "minimal-ui"],
+      "background_color": "#0f172a",
+      "theme_color": "#0f172a",
+      "icons": icons
+    },
+    media_type="application/manifest+json",
+  )
+
+
+@app.get("/sw.js")
+def service_worker():
+  return FileResponse("static/sw.js", media_type="application/javascript")
 
 
 @app.get("/snapshot")

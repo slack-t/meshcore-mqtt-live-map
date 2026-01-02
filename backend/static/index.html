@@ -6,6 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="{{SITE_DESCRIPTION}}" />
   <link rel="icon" href="{{SITE_ICON}}" type="image/png" />
+  <link rel="apple-touch-icon" href="{{SITE_ICON}}" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta property="og:title" content="{{SITE_TITLE}}" />
   <meta property="og:description" content="{{SITE_DESCRIPTION}}" />
   <meta property="og:type" content="website" />
@@ -3300,6 +3304,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     setStats();
     setInterval(refreshHeatLayer, 15000);
     setInterval(refreshOnlineMarkers, 30000);
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
 
     const legendToggle = document.getElementById('legend-toggle');
     const hud = document.querySelector('.hud');
