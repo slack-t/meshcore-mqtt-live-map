@@ -23,6 +23,7 @@ Thanks for helping improve the MeshCore Live Map. This repo is intentionally lig
 - `docker compose up -d --build` after any change.
 - `curl -s http://localhost:8080/stats` to confirm MQTT ingest.
 - Open the map: confirm markers, LOS, and propagation behave as expected.
+- Note: coordinates at `0,0` (even as strings) are filtered and won’t render.
 
 ## UI Changes
 When adding UI controls:

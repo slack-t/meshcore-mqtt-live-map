@@ -89,7 +89,7 @@ When a hop hash collides, the backend skips it (unique-only); oversized path lis
 If routes aren’t visible:
 - The packet may only include a single hop (`path: ["24"]`).
 - Other repeaters might not be publishing to MQTT, so the message is only seen by one observer.
-- Routes and trails drop any `0,0` coordinates and will purge bad entries on load.
+- Routes and trails drop any `0,0` coordinates (including string values) and will purge bad entries on load.
 - Route styling uses payload type: 2/5 = Message (blue), 8/9 = Trace (orange), 4 = Advert (green).
 - If history is empty but routes show, confirm `ROUTE_HISTORY_ALLOWED_MODES` includes the active route mode.
 
@@ -105,7 +105,7 @@ If routes aren’t visible:
 - On restart, devices should stay visible if `state.json` exists.
 - Route history is persisted separately to `data/route_history.jsonl` (rolling window).
 - If stale/mis-labeled roles appear, delete `data/state.json` or remove role entries.
-- State load now removes any `0,0` coordinates from devices/trails.
+- State load now removes any `0,0` coordinates from devices/trails (including string values).
 - When `TRAIL_LEN=0`, stored trails are cleared on load and no new trails are written.
 
 ## Troubleshooting Notes
@@ -127,7 +127,7 @@ If routes aren’t visible:
 - Docker restarts are required after file changes (always run `docker compose up -d --build`).
 - LOS is server-side only; elevation profile/peaks are returned by `/los`.
 - MQTT online indicator (green outline + legend) and configurable online window.
-- Filters out `0,0` GPS points from devices, trails, and routes.
+- Filters out `0,0` GPS points from devices, trails, and routes (including string values).
 - Added 24h route history storage + history toggle with volume-based colors.
 - Hide nodes now hides heat/routes/history along with markers/trails.
 - Fixed MQTT disconnect callback signature so broker drops don’t crash the MQTT loop.

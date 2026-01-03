@@ -48,7 +48,7 @@
 
 ## Feature Notes
 - MQTT is WSS/TLS with meshcore-decoder in a Node helper for advert/location parsing.
-- Routes are rendered as trace/message/advert lines with TTL cleanup; 0,0 coords are filtered from trails/routes.
+- Routes are rendered as trace/message/advert lines with TTL cleanup; 0,0 coords (including stringy zeros) are filtered from trails/routes.
 - Route hash collisions are ignored (unique-only mapping); long path lists are skipped via `ROUTE_PATH_MAX_LEN`.
 - Heatmap shows recent traffic points (TTL controlled).
 - LOS tool runs **server-side only** via `/los`, returning the elevation profile + peaks.

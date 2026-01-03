@@ -147,6 +147,7 @@ Use it:
 - Dark map also darkens node popups for readability.
 - Route styling uses payload type: 2/5 = Message (blue), 8/9 = Trace (orange), 4 = Advert (green).
 - If hop hashes collide, the backend skips those hashes (unique-only mapping).
+- Coordinates at `0,0` (including string values) are filtered from devices, trails, and routes.
 
 ## API
 The backend exposes a nodes API for external tools (e.g. MeshBuddy):
