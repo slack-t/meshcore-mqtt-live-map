@@ -8,8 +8,7 @@ Live example sites:
 
 
 ![Live map preview](example.gif)
----
-![Live map preview](backend/example2.gif)
+![Live map preview](example2.gif)
 
 ## Features
 - Live node markers with roles (Repeater, Companion, Room Server, Unknown)
