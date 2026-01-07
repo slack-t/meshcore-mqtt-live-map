@@ -37,6 +37,7 @@ This project renders live MeshCore traffic on a Leaflet + OpenStreetMap map. A F
 - Header includes a GitHub link icon and HUD summary (stats, feed note).
 - Base map toggle: Light/Dark/Topo; persisted to localStorage.
 - Dark map also darkens node popups for readability.
+- Node popups do not auto-pan; dragging the map won’t snap back to keep a popup in view.
 - Legend is collapsible and persisted to localStorage.
 - HUD is capped to `90vh` and scrolls to avoid running off-screen.
 - Map start position is configurable with `MAP_START_LAT`, `MAP_START_LON`, `MAP_START_ZOOM`.

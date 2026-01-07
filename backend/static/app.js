@@ -2385,9 +2385,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         m.bindPopup(makePopup(d), {
           maxWidth: 260,
           maxHeight: 320,
-          autoPan: true,
-          keepInView: true,
-          autoPanPadding: [18, 18]
+          autoPan: false,
+          keepInView: false
         });
         m.__suppressClick = false;
         m.__longPressTimer = null;

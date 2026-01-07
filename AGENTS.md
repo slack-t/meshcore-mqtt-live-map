@@ -75,6 +75,7 @@
 - Units toggle (km/mi) is stored in localStorage and defaults to `DISTANCE_UNITS`.
 - PWA support is enabled via `/manifest.webmanifest` + `/sw.js` so mobile browsers can install the app.
 - Clicking the logo toggles the left HUD panel while LOS/Propagation panels remain open.
+- Node popups do not auto-pan; dragging the map won’t snap back to keep a popup in view.
 - MQTT disconnect handler tolerates extra Paho args so the loop doesn’t crash; reconnects resume ingest.
 - Share button copies a URL with `lat`, `lon`, `zoom`, `layer`, `history`, `heat`, `labels`, `nodes`, `legend`, `units`, and `history_filter` params.
 - URL params override localStorage on load (`history=on` is the only way to load History open).
