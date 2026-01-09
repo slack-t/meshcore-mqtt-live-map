@@ -5,6 +5,7 @@ Live MeshCore traffic map that renders nodes, routes, and activity in real time 
 Live example sites: 
 - https://live.bostonme.sh/ - Greater Boston Mesh Map
 - https://map.eastmesh.au/ - Aus Eastern Mesh Live Map
+- https://mesh-map.e-l33t.org/ - NSW Mesh - Live Mesh Traffic Map
 
 
 ![Live map preview](example.gif)
