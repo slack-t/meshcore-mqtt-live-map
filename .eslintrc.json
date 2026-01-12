@@ -1,0 +1,39 @@
+{
+  "env": {
+    "browser": true,
+    "es2022": true
+  },
+  "extends": ["eslint:recommended"],
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "script"
+  },
+  "globals": {
+    "L": "readonly"
+  },
+  "rules": {
+    "indent": ["warn", 2, { "SwitchCase": 1 }],
+    "linebreak-style": ["error", "unix"],
+    "quotes": ["warn", "single", { "avoidEscape": true }],
+    "semi": ["error", "always"],
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-console": "off",
+    "eqeqeq": ["warn", "smart"],
+    "curly": ["warn", "multi-line"],
+    "no-var": "error",
+    "prefer-const": "warn",
+    "no-multiple-empty-lines": ["warn", { "max": 2, "maxEOF": 1 }],
+    "comma-dangle": ["warn", "only-multiline"],
+    "object-curly-spacing": ["warn", "always"],
+    "array-bracket-spacing": ["warn", "never"],
+    "space-before-function-paren": ["warn", {
+      "anonymous": "always",
+      "named": "never",
+      "asyncArrow": "always"
+    }],
+    "keyword-spacing": ["warn", { "before": true, "after": true }],
+    "space-infix-ops": "warn",
+    "no-trailing-spaces": "warn",
+    "eol-last": ["warn", "always"]
+  }
+}

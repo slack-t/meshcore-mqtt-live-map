@@ -127,4 +127,4 @@ LOS_PEAKS_MAX = int(os.getenv("LOS_PEAKS_MAX", "4"))
 COVERAGE_API_URL = os.getenv("COVERAGE_API_URL", "").strip()
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-NODE_SCRIPT_PATH = os.path.join(APP_DIR, "meshcore_decode.mjs")
+NODE_SCRIPT_PATH = os.path.join(APP_DIR, "scripts", "meshcore_decode.mjs")

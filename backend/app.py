@@ -155,7 +155,7 @@ from state import (
 # App / State
 # =========================
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=os.path.join(APP_DIR, "static")), name="static")
 
 mqtt_client: Optional[mqtt.Client] = None
 clients: Set[WebSocket] = set()
@@ -1126,7 +1126,7 @@ def root():
     with open(html_path, "r", encoding="utf-8") as handle:
       content = handle.read()
   except Exception:
-    return FileResponse("static/index.html")
+    return FileResponse(os.path.join(APP_DIR, "static", "index.html"))
 
   og_image_tag = ""
   twitter_image_tag = ""
@@ -1218,7 +1218,7 @@ def manifest():
 
 @app.get("/sw.js")
 def service_worker():
-  return FileResponse("static/sw.js", media_type="application/javascript")
+  return FileResponse(os.path.join(APP_DIR, "static", "sw.js"), media_type="application/javascript")
 
 
 @app.get("/snapshot")
