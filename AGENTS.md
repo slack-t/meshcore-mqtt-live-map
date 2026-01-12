@@ -7,6 +7,9 @@
 - `backend/decoder.py` contains payload parsing, MeshCore decoding, and route helpers.
 - `backend/los.py` contains LOS math + elevation fetch helpers.
 - `backend/history.py` handles 24h route history persistence/cleanup.
+- `backend/routes/` contains API, websocket, debug, and static route modules.
+- `backend/services/` contains MQTT, broadcaster, reaper, and persistence services.
+- `backend/scripts/meshcore_decode.mjs` is the Node MeshCore decoder helper.
 - `backend/static/index.html` is the HTML shell + template placeholders.
 - `backend/static/styles.css` holds all UI styles.
 - `backend/static/app.js` holds all client-side map logic.
@@ -15,7 +18,7 @@
 - `docker-compose.yaml` runs the service as `meshmap-live`.
 - `data/` stores persisted state (`state.json`), route history (`route_history.jsonl`), and optional role overrides (`device_roles.json`).
 - `.env` holds dev runtime settings; `.env.example` mirrors template defaults.
-- `VERSION.txt` tracks the current version; append changes in `VERSIONS.md`.
+- `VERSIONS.md` is the changelog; keep `VERSION.txt` in sync with the latest entry.
 
 ## Build, Test, and Development Commands
 - `docker compose up -d --build` rebuilds and restarts the backend (preferred workflow).

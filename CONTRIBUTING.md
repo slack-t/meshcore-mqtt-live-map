@@ -8,11 +8,14 @@ Thanks for helping improve the MeshCore Live Map. This repo is intentionally lig
 3) Verify: `curl -s http://localhost:8080/snapshot`
 
 ## Versioning
-- Update `VERSION.txt` when adding features.
 - Append a new section to `VERSIONS.md` describing the change set.
+- Update `VERSION.txt` to match the latest entry.
 
 ## Project Layout
 - `backend/app.py` handles MQTT ingest, decoding, routing, and API endpoints.
+- `backend/routes/` holds HTTP/WebSocket route handlers split by concern.
+- `backend/services/` holds background services (MQTT, broadcaster, reaper, persistence).
+- `backend/scripts/meshcore_decode.mjs` is the Node MeshCore decoder helper.
 - `backend/static/index.html` is the HTML shell + template placeholders.
 - `backend/static/styles.css` holds all UI styling.
 - `backend/static/app.js` contains all client-side map logic (Leaflet, routes, LOS, propagation).

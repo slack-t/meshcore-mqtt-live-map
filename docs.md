@@ -3,11 +3,11 @@
 This document captures the state of the project and the key changes made so far, so a new Codex session can pick up without losing context.
 
 ## Overview
-This project renders live MeshCore traffic on a Leaflet + OpenStreetMap map. A FastAPI backend subscribes to MQTT (WSS/TLS), decodes MeshCore packets using `@michaelhart/meshcore-decoder`, and broadcasts device updates and routes over WebSockets to the frontend. Core logic is split into config/state/decoder/LOS/history modules so changes are localized. The UI includes heatmap, LOS tools, map mode toggles, and a 24‑hour route history layer.
+This project renders live MeshCore traffic on a Leaflet + OpenStreetMap map. A FastAPI backend subscribes to MQTT (WSS/TLS), decodes MeshCore packets using `@michaelhart/meshcore-decoder`, and broadcasts device updates and routes over WebSockets to the frontend. Core logic is split into config/state/decoder/LOS/history modules plus `routes/` and `services/` layers so changes are localized. The UI includes heatmap, LOS tools, map mode toggles, and a 24‑hour route history layer.
 
 ## Versioning
-- `VERSION.txt` holds the current version string.
-- `VERSIONS.md` is an append-only changelog by version.
+- `VERSIONS.md` is the append-only changelog by version.
+- `VERSION.txt` mirrors the latest version entry.
 
 ## Key Paths
 - `backend/app.py`: FastAPI server + MQTT lifecycle and websocket broadcasting.
@@ -16,10 +16,14 @@ This project renders live MeshCore traffic on a Leaflet + OpenStreetMap map. A F
 - `backend/decoder.py`: payload parsing, meshcore-decoder integration, route helpers.
 - `backend/los.py`: LOS math + elevation sampling.
 - `backend/history.py`: route history persistence + pruning.
+- `backend/routes/`: API, websocket, debug, and static route modules.
+- `backend/services/`: MQTT, broadcaster, reaper, persistence services.
+- `backend/scripts/meshcore_decode.mjs`: Node MeshCore decoder helper.
 - `backend/static/index.html`: HTML shell + template placeholders.
 - `backend/static/styles.css`: UI styles.
 - `backend/static/app.js`: Leaflet UI, markers, legends, routes, tools.
 - `backend/static/sw.js`: PWA service worker.
+- Static files are served from `APP_DIR/static` so the app is resilient to different working directories.
 - `docker-compose.yaml`: runtime configuration.
 - `data/state.json`: persisted device/trail/roles/names (loaded at startup).
 - `data/route_history.jsonl`: rolling 24h route history segments (lines).

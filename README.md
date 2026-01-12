@@ -1,6 +1,6 @@
 # Mesh Live Map
 
-Version: `1.0.2` (see `VERSION.txt`)
+Version: `1.0.3` (see `VERSIONS.md`)
 
 Live MeshCore traffic map that renders nodes, routes, and activity in real time on a Leaflet map. The backend subscribes to MQTT over WebSockets + TLS, decodes MeshCore packets with `@michaelhart/meshcore-decoder`, and streams updates to the browser via WebSockets.
 
@@ -42,6 +42,9 @@ Live example sites:
 - `backend/decoder.py`: payload parsing + meshcore-decoder integration
 - `backend/los.py`: LOS math + elevation helpers
 - `backend/history.py`: route history persistence + pruning
+- `backend/routes/`: API, websocket, debug, and static route modules
+- `backend/services/`: MQTT, broadcaster, reaper, persistence services
+- `backend/scripts/meshcore_decode.mjs`: Node MeshCore decoder helper
 - `backend/static/index.html`: HTML shell + template placeholders
 - `backend/static/styles.css`: UI styles
 - `backend/static/app.js`: map logic + UI controls

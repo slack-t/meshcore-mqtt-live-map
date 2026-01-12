@@ -1,5 +1,11 @@
 # Versions
 
+## v1.0.3 (01-11-2026)
+- Modular backend layout with `backend/routes/` and `backend/services/` for clearer separation
+- Add `backend/scripts/meshcore_decode.mjs` as the Node decoder helper
+- Static files now resolve from `APP_DIR/static` for consistent pathing
+- Documentation updated to reflect the new module layout
+
 ## v1.0.2 (01-11-2026)
 - Fix update banner Hide action by honoring the hidden state in CSS
 - Remove update banner debug logging after verification

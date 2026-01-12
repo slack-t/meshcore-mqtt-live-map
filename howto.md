@@ -160,3 +160,6 @@ curl -s http://localhost:8080/stats | jq
 Notes:
 - The map only places nodes once it decodes adverts that include a valid location.
 - If no nodes appear, verify the MQTT topic and that the broker is sending `/packets` data with raw hex payloads.
+
+Versioning:
+- See `VERSIONS.md` for the changelog; `VERSION.txt` mirrors the latest entry.
