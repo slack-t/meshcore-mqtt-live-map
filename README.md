@@ -232,3 +232,7 @@ Peer summary:
 ---
 
 This project was vibe-coded with Codex—please expect rough edges and the occasional bug.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=yellowcooln/meshcore-mqtt-live-map&type=date&legend=top-left)](https://www.star-history.com/#yellowcooln/meshcore-mqtt-live-map&type=date&legend=top-left)
