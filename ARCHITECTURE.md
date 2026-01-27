@@ -1,7 +1,7 @@
 # Architecture Guide
 
 This document explains how the Mesh Live Map codebase is organized and how the components interact.
-Current version: `1.1.2` (see `VERSIONS.md`).
+Current version: `1.2.0` (see `VERSIONS.md`).
 
 ## High-Level Overview
 
@@ -37,6 +37,7 @@ mesh-live-map-dev/
 │   ├── decoder.py          # Payload parsing, MeshCore decoding
 │   ├── history.py          # Route history persistence (24h rolling window)
 │   ├── los.py              # Line-of-sight calculations, elevation API
+│   ├── turnstile.py        # Cloudflare Turnstile verification + tokens
 │   ├── routes/             # HTTP/WebSocket route modules
 │   │   ├── api.py           # API endpoints
 │   │   ├── websocket.py     # WebSocket handlers
@@ -53,6 +54,8 @@ mesh-live-map-dev/
 │   │   ├── index.html      # HTML shell with template placeholders
 │   │   ├── app.js          # All frontend logic (Leaflet, WebSocket, UI)
 │   │   ├── styles.css      # UI styling
+│   │   ├── landing.html    # Turnstile landing/verification page
+│   │   ├── turnstile.js    # Turnstile widget + verification flow
 │   │   ├── sw.js           # PWA service worker
 │   │   └── logo.png        # Site branding
 │   ├── Dockerfile          # Container build
@@ -107,6 +110,7 @@ Loads all settings from environment variables with sensible defaults.
 - Neighbor overrides (`NEIGHBOR_OVERRIDES_FILE`)
 - Device management (`DEVICE_TTL_SECONDS`, `TRAIL_LEN`)
 - Route handling (`ROUTE_TTL_SECONDS`, `ROUTE_HISTORY_HOURS`)
+- Turnstile protection (`TURNSTILE_*`, gated by `PROD_MODE=true`)
 - Map display (`MAP_START_LAT`, `MAP_START_LON`, `MAP_RADIUS_KM`)
 - Site metadata (`SITE_TITLE`, `SITE_DESCRIPTION`)
 
@@ -187,6 +191,8 @@ HTML shell with `{{PLACEHOLDER}}` syntax for server-side injection:
 - `{{SITE_TITLE}}`, `{{SITE_DESCRIPTION}}` - Metadata
 - `{{MAP_START_LAT}}`, `{{MAP_START_LON}}` - Initial view
 - `{{PROD_MODE}}`, `{{PROD_TOKEN}}` - Auth settings
+- `{{TURNSTILE_ENABLED}}`, `{{TURNSTILE_SITE_KEY}}` - Turnstile settings
+  (Turnstile is only active when `PROD_MODE=true`)
 
 ---
 
@@ -361,4 +367,4 @@ npx eslint backend/static/app.js
 ```
 
 Versioning:
-- See `VERSIONS.md` for the changelog; `VERSION.txt` mirrors the latest entry (`1.1.2`).
+- See `VERSIONS.md` for the changelog; `VERSION.txt` mirrors the latest entry (`1.2.0`).

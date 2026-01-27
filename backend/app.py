@@ -51,6 +51,7 @@ from history import (
   _record_route_history,
   _route_history_saver,
 )
+from turnstile import TurnstileVerifier
 from los import (
   _fetch_elevations,
   _find_los_peaks,
@@ -98,6 +99,13 @@ from config import (
   MQTT_ONLINE_FORCE_NAMES_SET,
   DEBUG_PAYLOAD,
   DEBUG_PAYLOAD_MAX,
+  TURNSTILE_ENABLED,
+  TURNSTILE_SITE_KEY,
+  TURNSTILE_SECRET_KEY,
+  TURNSTILE_API_URL,
+  TURNSTILE_TOKEN_TTL_SECONDS,
+  TURNSTILE_BOT_BYPASS,
+  TURNSTILE_BOT_ALLOWLIST,
   DECODE_WITH_NODE,
   NODE_DECODE_TIMEOUT_SECONDS,
   PAYLOAD_PREVIEW_MAX,
@@ -181,6 +189,18 @@ git_update_info = {
   "remote_short": None,
   "error": None,
 }
+
+# Initialize Turnstile verifier if enabled
+turnstile_verifier: Optional[TurnstileVerifier] = None
+if TURNSTILE_ENABLED and TURNSTILE_SECRET_KEY:
+  turnstile_verifier = TurnstileVerifier(
+    secret_key=TURNSTILE_SECRET_KEY,
+    api_url=TURNSTILE_API_URL,
+    token_ttl_seconds=TURNSTILE_TOKEN_TTL_SECONDS,
+  )
+  print(f"[startup] Turnstile authentication enabled")
+else:
+  print(f"[startup] Turnstile authentication disabled")
 def _compute_asset_version() -> str:
   paths = [
     os.path.join(APP_DIR, "static", "app.js"),
@@ -1381,10 +1401,78 @@ async def reaper():
 
 
 # =========================
+# Helpers: Turnstile auth
+# =========================
+TURNSTILE_BOT_TOKENS = [
+  token.strip().lower()
+  for token in TURNSTILE_BOT_ALLOWLIST.split(",")
+  if token and token.strip()
+]
+
+
+def _is_allowlisted_bot(request: Request) -> bool:
+  """Return True when the request looks like a known embed bot."""
+  if not TURNSTILE_ENABLED or not TURNSTILE_BOT_BYPASS:
+    return False
+  user_agent = (request.headers.get("user-agent") or "").lower()
+  if not user_agent:
+    return False
+  for token in TURNSTILE_BOT_TOKENS:
+    if token in user_agent:
+      return True
+  return False
+
+
+def _check_turnstile_auth(request: Request) -> bool:
+  """Check if user has valid Turnstile auth token."""
+  if not TURNSTILE_ENABLED or not turnstile_verifier:
+    return True
+
+  # Allowlist common embed bots (Discord, Slack, etc.)
+  if _is_allowlisted_bot(request):
+    ua = request.headers.get("user-agent", "-")
+    print(f"[turnstile] bot bypass user-agent={ua}")
+    return True
+
+  # Check for auth token in cookies or headers
+  auth_token = request.cookies.get("meshmap_auth") or \
+               request.headers.get("Authorization", "").replace("Bearer ", "")
+
+  if auth_token and turnstile_verifier.verify_auth_token(auth_token):
+    return True
+
+  return False
+
+
+# =========================
 # FastAPI routes
 # =========================
 @app.get("/")
 def root(request: Request):
+  # If Turnstile is enabled and user isn't authenticated, serve landing page
+  if TURNSTILE_ENABLED and not _check_turnstile_auth(request):
+    landing_path = os.path.join(APP_DIR, "static", "landing.html")
+    try:
+      with open(landing_path, "r", encoding="utf-8") as handle:
+        content = handle.read()
+    except Exception:
+      return FileResponse("static/landing.html")
+
+    # Replace template variables in landing page
+    replacements = {
+      "SITE_TITLE": SITE_TITLE,
+      "SITE_DESCRIPTION": SITE_DESCRIPTION,
+      "SITE_ICON": SITE_ICON,
+      "TURNSTILE_SITE_KEY": TURNSTILE_SITE_KEY,
+      "ASSET_VERSION": ASSET_VERSION,
+    }
+    for key, value in replacements.items():
+      safe_value = html.escape(str(value), quote=True)
+      content = content.replace(f"{{{{{key}}}}}", safe_value)
+
+    return HTMLResponse(content)
+
+  # Serve map page
   html_path = os.path.join(APP_DIR, "static", "index.html")
   try:
     with open(html_path, "r", encoding="utf-8") as handle:
@@ -1542,7 +1630,11 @@ def root(request: Request):
     "UPDATE_REMOTE":
       git_update_info.get("remote_short") or "",
     "UPDATE_BANNER_HIDDEN":
-      "" if git_update_info.get("available") else "hidden",
+       "" if git_update_info.get("available") else "hidden",
+    "TURNSTILE_ENABLED":
+       str(TURNSTILE_ENABLED).lower(),
+    "TURNSTILE_SITE_KEY":
+       TURNSTILE_SITE_KEY,
   }
   for key, value in replacements.items():
     safe_value = html.escape(str(value), quote=True)
@@ -1847,6 +1939,84 @@ async def preview_image(
     traceback.print_exc()
     # Return empty image on error
     return Response(content=b"", status_code=500, media_type="image/png")
+
+
+@app.get("/map")
+def map_page(request: Request):
+  """Serve the map page (with Turnstile auth check)."""
+  # If Turnstile is enabled and user isn't authenticated, redirect to landing
+  if TURNSTILE_ENABLED and not _check_turnstile_auth(request):
+    print("[map] Unauthenticated user accessing /map, redirecting to /")
+    return HTMLResponse(
+      "<script>window.location.href = '/';</script>",
+      status_code=303,
+    )
+
+  # Otherwise serve the map page
+  html_path = os.path.join(APP_DIR, "static", "index.html")
+  try:
+    with open(html_path, "r", encoding="utf-8") as handle:
+      content = handle.read()
+  except Exception:
+    return FileResponse("static/index.html")
+
+  # Include all the template replacements (same as root endpoint)
+  # Generate OG image tags
+  og_image_tag = ""
+  twitter_image_tag = ""
+  if SITE_OG_IMAGE:
+    safe_image = html.escape(str(SITE_OG_IMAGE), quote=True)
+    og_image_tag = f'<meta property="og:image" content="{safe_image}" />'
+    twitter_image_tag = f'<meta name="twitter:image" content="{safe_image}" />'
+  
+  content = content.replace("{{OG_IMAGE_TAG}}", og_image_tag)
+  content = content.replace("{{TWITTER_IMAGE_TAG}}", twitter_image_tag)
+  
+  trail_info_suffix = ""
+  if TRAIL_LEN > 0:
+    trail_info_suffix = f" Trails show last ~{TRAIL_LEN} points."
+
+  SAFE_OG_URL = html.escape(SITE_URL, quote=True)
+
+  replacements = {
+    "SITE_TITLE": SITE_TITLE,
+    "SITE_DESCRIPTION": SITE_DESCRIPTION,
+    "SITE_URL": SAFE_OG_URL,
+    "SITE_ICON": SITE_ICON,
+    "SITE_FEED_NOTE": SITE_FEED_NOTE,
+    "CUSTOM_LINK_URL": CUSTOM_LINK_URL,
+    "ASSET_VERSION": ASSET_VERSION,
+    "DISTANCE_UNITS": DISTANCE_UNITS,
+    "NODE_MARKER_RADIUS": NODE_MARKER_RADIUS,
+    "HISTORY_LINK_SCALE": HISTORY_LINK_SCALE,
+    "TRAIL_INFO_SUFFIX": trail_info_suffix,
+    "PROD_MODE": str(PROD_MODE).lower(),
+    "PROD_TOKEN": PROD_TOKEN,
+    "MAP_START_LAT": MAP_START_LAT,
+    "MAP_START_LON": MAP_START_LON,
+    "MAP_START_ZOOM": MAP_START_ZOOM,
+    "MAP_RADIUS_KM": MAP_RADIUS_KM,
+    "MAP_RADIUS_SHOW": str(MAP_RADIUS_SHOW).lower(),
+    "MAP_DEFAULT_LAYER": MAP_DEFAULT_LAYER,
+    "LOS_ELEVATION_URL": LOS_ELEVATION_URL,
+    "LOS_SAMPLE_MIN": LOS_SAMPLE_MIN,
+    "LOS_SAMPLE_MAX": LOS_SAMPLE_MAX,
+    "LOS_SAMPLE_STEP_METERS": LOS_SAMPLE_STEP_METERS,
+    "LOS_PEAKS_MAX": LOS_PEAKS_MAX,
+    "MQTT_ONLINE_SECONDS": MQTT_ONLINE_SECONDS,
+    "COVERAGE_API_URL": COVERAGE_API_URL,
+    "UPDATE_AVAILABLE": str(bool(git_update_info.get("available"))).lower(),
+    "UPDATE_LOCAL": git_update_info.get("local_short") or "",
+    "UPDATE_REMOTE": git_update_info.get("remote_short") or "",
+    "UPDATE_BANNER_HIDDEN": "" if git_update_info.get("available") else "hidden",
+    "TURNSTILE_ENABLED": str(TURNSTILE_ENABLED).lower(),
+    "TURNSTILE_SITE_KEY": TURNSTILE_SITE_KEY,
+  }
+  for key, value in replacements.items():
+    safe_value = html.escape(str(value), quote=True)
+    content = content.replace(f"{{{{{key}}}}}", safe_value)
+
+  return HTMLResponse(content)
 
 
 @app.get("/manifest.webmanifest")
@@ -2275,6 +2445,75 @@ def debug_status_entries():
     "items": list(reversed(list(status_last))),
     "server_time": time.time(),
   }
+
+
+@app.post("/api/verify-turnstile")
+async def verify_turnstile(request: Request):
+  """Verify Cloudflare Turnstile token and issue auth token."""
+  if not TURNSTILE_ENABLED or not turnstile_verifier:
+    return JSONResponse(
+      {"success": False, "error": "Turnstile is not enabled"},
+      status_code=400,
+    )
+
+  try:
+    body = await request.json()
+    token = body.get("token", "").strip()
+
+    if not token:
+      return JSONResponse(
+        {"success": False, "error": "Token is required"},
+        status_code=400,
+      )
+
+    # Verify token with Cloudflare
+    success, error = await turnstile_verifier.verify_turnstile_token(
+      token,
+      remote_ip=request.client.host if request.client else None,
+    )
+
+    if not success:
+      print(f"[turnstile] Verification failed: {error}")
+      return JSONResponse(
+        {"success": False, "error": error or "Verification failed"},
+        status_code=400,
+      )
+
+    # Issue auth token for client
+    auth_token = turnstile_verifier.issue_auth_token()
+    print(f"[turnstile] Verification successful, issued auth token")
+
+    # Create response with auth token and set cookie
+    response = JSONResponse(
+      {
+        "success": True,
+        "auth_token": auth_token,
+      },
+      status_code=200,
+    )
+    
+    # Set auth cookie (expires in TURNSTILE_TOKEN_TTL_SECONDS)
+    response.set_cookie(
+      key="meshmap_auth",
+      value=auth_token,
+      max_age=TURNSTILE_TOKEN_TTL_SECONDS,
+      path="/",
+      samesite="lax",
+    )
+    
+    return response
+
+  except json.JSONDecodeError:
+    return JSONResponse(
+      {"success": False, "error": "Invalid JSON"},
+      status_code=400,
+    )
+  except Exception as e:
+    print(f"[turnstile] Error verifying token: {e}")
+    return JSONResponse(
+      {"success": False, "error": str(e)},
+      status_code=500,
+    )
 
 
 @app.websocket("/ws")

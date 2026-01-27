@@ -6,3 +6,7 @@ backend/static/logo.png
 # runtime state
 /data/state.json
 /data/*.json
+
+# python bytecode
+__pycache__/
+*.pyc

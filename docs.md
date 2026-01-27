@@ -1,13 +1,13 @@
 # Mesh Map Live: Implementation Notes
 
 This document captures the state of the project and the key changes made so far, so a new Codex session can pick up without losing context.
-Current version: `1.1.2` (see `VERSIONS.md`).
+Current version: `1.2.0` (see `VERSIONS.md`).
 
 ## Overview
 This project renders live MeshCore traffic on a Leaflet + OpenStreetMap map. A FastAPI backend subscribes to MQTT (WSS/TLS or TCP), decodes MeshCore packets using `@michaelhart/meshcore-decoder`, and broadcasts device updates and routes over WebSockets to the frontend. Core logic is split into config/state/decoder/LOS/history modules so changes are localized. The UI includes heatmap, LOS tools, map mode toggles, and a 24‑hour route history layer.
 
 ## Versioning
-- `VERSION.txt` holds the current version string (`1.1.2`).
+- `VERSION.txt` holds the current version string (`1.2.0`).
 - `VERSIONS.md` is an append-only changelog by version.
 
 ## Key Paths
@@ -43,6 +43,11 @@ This project renders live MeshCore traffic on a Leaflet + OpenStreetMap map. A F
 - `ROUTE_MAX_HOP_DISTANCE` prunes hops longer than the configured km distance.
 - `ROUTE_INFRA_ONLY` limits route lines to repeaters/rooms (companions excluded from routes).
 - `NEIGHBOR_OVERRIDES_FILE` points at an optional JSON file with neighbor pairs to resolve hash collisions.
+- Turnstile protection is gated by `PROD_MODE=true` and controlled by:
+  `TURNSTILE_ENABLED`, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`,
+  `TURNSTILE_API_URL`, and `TURNSTILE_TOKEN_TTL_SECONDS`.
+- Discord/social embeds can be preserved under Turnstile with
+  `TURNSTILE_BOT_BYPASS` and `TURNSTILE_BOT_ALLOWLIST`.
 
 ## MQTT + Decoder
 - MQTT supports **WebSockets + TLS** or plain TCP. Typical deployments use `MQTT_TRANSPORT=websockets`, `MQTT_TLS=true`, and `MQTT_WS_PATH=/` or `/mqtt`.

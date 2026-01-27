@@ -1,5 +1,6 @@
 <!doctype html>
 <html>
+
 <head>
   <meta charset="utf-8" />
   <title>{{SITE_TITLE}}</title>
@@ -19,41 +20,45 @@
   <meta name="twitter:title" content="{{SITE_TITLE}}" />
   <meta name="twitter:description" content="{{SITE_DESCRIPTION}}" />
   {{TWITTER_IMAGE_TAG}}
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/static/styles.css?v={{ASSET_VERSION}}" />
 </head>
-<body
-  data-map-start-lat="{{MAP_START_LAT}}"
-  data-map-start-lon="{{MAP_START_LON}}"
-  data-map-start-zoom="{{MAP_START_ZOOM}}"
-  data-map-radius-km="{{MAP_RADIUS_KM}}"
-  data-map-radius-show="{{MAP_RADIUS_SHOW}}"
-  data-map-default-layer="{{MAP_DEFAULT_LAYER}}"
-  data-prod-mode="{{PROD_MODE}}"
-  data-prod-token="{{PROD_TOKEN}}"
-  data-los-elevation-url="{{LOS_ELEVATION_URL}}"
-  data-los-sample-min="{{LOS_SAMPLE_MIN}}"
-  data-los-sample-max="{{LOS_SAMPLE_MAX}}"
-  data-los-sample-step-meters="{{LOS_SAMPLE_STEP_METERS}}"
-  data-los-peaks-max="{{LOS_PEAKS_MAX}}"
-  data-mqtt-online-seconds="{{MQTT_ONLINE_SECONDS}}"
-  data-distance-units="{{DISTANCE_UNITS}}"
-  data-node-radius="{{NODE_MARKER_RADIUS}}"
-  data-history-link-scale="{{HISTORY_LINK_SCALE}}"
-  data-coverage-api-url="{{COVERAGE_API_URL}}"
-  data-custom-link-url="{{CUSTOM_LINK_URL}}"
-  data-update-available="{{UPDATE_AVAILABLE}}"
-  data-update-local="{{UPDATE_LOCAL}}"
-  data-update-remote="{{UPDATE_REMOTE}}"
->
+
+<body data-map-start-lat="{{MAP_START_LAT}}" data-map-start-lon="{{MAP_START_LON}}"
+  data-map-start-zoom="{{MAP_START_ZOOM}}" data-map-radius-km="{{MAP_RADIUS_KM}}"
+  data-map-radius-show="{{MAP_RADIUS_SHOW}}" data-map-default-layer="{{MAP_DEFAULT_LAYER}}"
+  data-prod-mode="{{PROD_MODE}}" data-prod-token="{{PROD_TOKEN}}" data-los-elevation-url="{{LOS_ELEVATION_URL}}"
+  data-los-sample-min="{{LOS_SAMPLE_MIN}}" data-los-sample-max="{{LOS_SAMPLE_MAX}}"
+  data-los-sample-step-meters="{{LOS_SAMPLE_STEP_METERS}}" data-los-peaks-max="{{LOS_PEAKS_MAX}}"
+  data-mqtt-online-seconds="{{MQTT_ONLINE_SECONDS}}" data-distance-units="{{DISTANCE_UNITS}}"
+  data-node-radius="{{NODE_MARKER_RADIUS}}" data-history-link-scale="{{HISTORY_LINK_SCALE}}"
+  data-coverage-api-url="{{COVERAGE_API_URL}}" data-custom-link-url="{{CUSTOM_LINK_URL}}"
+  data-update-available="{{UPDATE_AVAILABLE}}" data-update-local="{{UPDATE_LOCAL}}"
+  data-update-remote="{{UPDATE_REMOTE}}" data-turnstile-enabled="{{TURNSTILE_ENABLED}}">
   <script>
     window.__meshmapStarted = false;
     window.__meshmapReportError = (message) => console.warn(message);
+
+    // Check Turnstile authentication
+    (function () {
+      const turnstileEnabled = document.body.getAttribute('data-turnstile-enabled') === 'true';
+      if (!turnstileEnabled) {
+        console.log('[auth] Turnstile disabled, loading map');
+        return;
+      }
+
+      // If this is the landing page (has Turnstile container), don't do auth check
+      // The frontend will handle Turnstile verification
+      const isTurnstileContainer = document.getElementById('turnstile-container');
+      if (isTurnstileContainer) {
+        console.log('[auth] On landing page with Turnstile widget');
+        return;
+      }
+
+      // This is the map page - server already verified auth, just log
+      console.log('[auth] On map page, server verified authentication');
+    })();
   </script>
   <div class="hud">
     <div class="hud-header">
@@ -63,25 +68,31 @@
         </button>
         <div class="hud-title"><span class="pill">Live</span> {{SITE_TITLE}}</div>
       </div>
-      <button class="hud-action hud-share" id="share-toggle" type="button" aria-label="Copy share link" title="Copy share link">
+      <button class="hud-action hud-share" id="share-toggle" type="button" aria-label="Copy share link"
+        title="Copy share link">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M18 16.1a2.9 2.9 0 0 0-1.95.77l-7.1-4.14c.04-.23.05-.46.05-.7 0-.23-.01-.46-.05-.68l7.05-4.12A2.95 2.95 0 1 0 14.5 5c0 .23.02.46.07.68L7.52 9.8a2.9 2.9 0 1 0 0 4.4l7.05 4.12a2.9 2.9 0 1 0 3.43-2.22z"/>
+          <path
+            d="M18 16.1a2.9 2.9 0 0 0-1.95.77l-7.1-4.14c.04-.23.05-.46.05-.7 0-.23-.01-.46-.05-.68l7.05-4.12A2.95 2.95 0 1 0 14.5 5c0 .23.02.46.07.68L7.52 9.8a2.9 2.9 0 1 0 0 4.4l7.05 4.12a2.9 2.9 0 1 0 3.43-2.22z" />
         </svg>
       </button>
-      <a class="hud-action hud-custom" id="custom-link" href="{{CUSTOM_LINK_URL}}" target="_blank" rel="noopener" aria-label="Open custom link">
+      <a class="hud-action hud-custom" id="custom-link" href="{{CUSTOM_LINK_URL}}" target="_blank" rel="noopener"
+        aria-label="Open custom link">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M14 3h7v7h-2V6.41l-9.3 9.3-1.4-1.42 9.3-9.29H14V3z"/>
-          <path d="M5 5h6v2H7v10h10v-4h2v6H5V5z"/>
+          <path d="M14 3h7v7h-2V6.41l-9.3 9.3-1.4-1.42 9.3-9.29H14V3z" />
+          <path d="M5 5h6v2H7v10h10v-4h2v6H5V5z" />
         </svg>
       </a>
-      <a class="hud-action hud-github" href="https://github.com/yellowcooln/meshcore-mqtt-live-map/" target="_blank" rel="noopener" aria-label="GitHub repository">
+      <a class="hud-action hud-github" href="https://github.com/yellowcooln/meshcore-mqtt-live-map/" target="_blank"
+        rel="noopener" aria-label="GitHub repository">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.5 2.87 8.32 6.84 9.67.5.1.68-.23.68-.5v-1.77c-2.78.62-3.37-1.38-3.37-1.38-.46-1.2-1.12-1.52-1.12-1.52-.9-.64.07-.63.07-.63 1 .07 1.53 1.07 1.53 1.07.9 1.6 2.36 1.14 2.94.87.1-.66.35-1.14.63-1.4-2.22-.27-4.56-1.14-4.56-5.08 0-1.12.39-2.04 1.02-2.76-.1-.27-.45-1.37.1-2.86 0 0 .83-.27 2.72 1.05a9.2 9.2 0 0 1 2.48-.35c.84 0 1.68.12 2.48.35 1.88-1.32 2.7-1.05 2.7-1.05.56 1.5.21 2.6.11 2.86.64.72 1.02 1.64 1.02 2.76 0 3.95-2.34 4.8-4.57 5.07.36.33.68.97.68 1.96v2.9c0 .28.18.6.69.5A10.03 10.03 0 0 0 22 12.26C22 6.58 17.52 2 12 2z"/>
+          <path
+            d="M12 2C6.48 2 2 6.58 2 12.26c0 4.5 2.87 8.32 6.84 9.67.5.1.68-.23.68-.5v-1.77c-2.78.62-3.37-1.38-3.37-1.38-.46-1.2-1.12-1.52-1.12-1.52-.9-.64.07-.63.07-.63 1 .07 1.53 1.07 1.53 1.07.9 1.6 2.36 1.14 2.94.87.1-.66.35-1.14.63-1.4-2.22-.27-4.56-1.14-4.56-5.08 0-1.12.39-2.04 1.02-2.76-.1-.27-.45-1.37.1-2.86 0 0 .83-.27 2.72 1.05a9.2 9.2 0 0 1 2.48-.35c.84 0 1.68.12 2.48.35 1.88-1.32 2.7-1.05 2.7-1.05.56 1.5.21 2.6.11 2.86.64.72 1.02 1.64 1.02 2.76 0 3.95-2.34 4.8-4.57 5.07.36.33.68.97.68 1.96v2.9c0 .28.18.6.69.5A10.03 10.03 0 0 0 22 12.26C22 6.58 17.52 2 12 2z" />
         </svg>
       </a>
     </div>
     <div class="hud-body">
-      <div class="small">MeshCore live map • markers update in real time{{TRAIL_INFO_SUFFIX}} • click logo to hide/show HUD elements</div>
+      <div class="small">MeshCore live map • markers update in real time{{TRAIL_INFO_SUFFIX}} • click logo to hide/show
+        HUD elements</div>
       <div class="small">{{SITE_FEED_NOTE}}</div>
       <div class="small" id="stats"></div>
       <div class="hud-update" id="update-banner" {{UPDATE_BANNER_HIDDEN}}>
@@ -89,7 +100,8 @@
         <button class="map-toggle hud-update-dismiss" id="update-dismiss" type="button">Hide</button>
       </div>
       <div class="node-search">
-        <input class="node-search-input" id="node-search" type="text" placeholder="Search nodes by name or key..." autocomplete="off" />
+        <input class="node-search-input" id="node-search" type="text" placeholder="Search nodes by name or key..."
+          autocomplete="off" />
         <div class="node-search-results" id="node-search-results" hidden></div>
       </div>
       <div class="node-size-control">
@@ -106,7 +118,6 @@
       <button class="map-toggle" id="heat-toggle" type="button">Hide heat</button>
       <button class="map-toggle" id="coverage-toggle" type="button">Coverage</button>
       <button class="map-toggle" id="history-toggle" type="button">History tool</button>
-
       <button class="map-toggle" id="show-hops-toggle" type="button">Show hops</button>
       <button class="map-toggle" id="peers-toggle" type="button">Peers tool</button>
       <button class="map-toggle" id="los-toggle" type="button">LOS tool</button>
@@ -128,7 +139,8 @@
           <div class="legend-item"><span class="legend-dot legend-los-relay"></span> Relay suggested</div>
         </div>
         <div class="legend-item"><span class="legend-heat"></span> Heat (last 10 min)</div>
-        <div class="legend-item"><span class="legend-dot legend-online"></span><span id="mqtt-online-label">MQTT online (last 5 min)</span></div>
+        <div class="legend-item"><span class="legend-dot legend-online"></span><span id="mqtt-online-label">MQTT online
+            (last 5 min)</span></div>
         <div class="legend-item"><span class="legend-dot legend-repeater"></span> Repeater</div>
         <div class="legend-item"><span class="legend-dot legend-companion"></span> Companion</div>
         <div class="legend-item"><span class="legend-dot legend-room"></span> Room server</div>
@@ -189,27 +201,24 @@
     </div>
     <button class="map-toggle" id="peers-clear" type="button">Clear peers</button>
   </div>
-  <div class="route-panel" id="route-panel" hidden>
-    <button class="panel-close" id="route-hide" type="button" aria-label="Hide route details">×</button>
-    <div class="small"><strong>Route Details</strong></div>
-    <div class="small" id="route-meta"></div>
-    <div class="peer-list" id="route-details-content"></div>
-  </div>
   <div class="prop-panel" id="prop-panel">
     <div class="small"><strong>Propagation estimate</strong></div>
     <div class="small">LoRa 910.525 MHz • BW 62.5 kHz • SF7 • CR8</div>
     <div class="small">Assumes 3 dBi TX antenna, 6 dB noise figure, 10 dB fade margin.</div>
     <div class="small">Defaults assume 5 m AGL; MSL overrides use terrain data.</div>
     <label class="prop-field">
-      <span>Tx power (dBm)<span class="prop-hint" title="transmit power used for link budget" data-tooltip="transmit power used for link budget">?</span></span>
+      <span>Tx power (dBm)<span class="prop-hint" title="transmit power used for link budget"
+          data-tooltip="transmit power used for link budget">?</span></span>
       <input id="prop-txpower" type="number" min="2" max="30" step="1" value="22" />
     </label>
     <label class="prop-field">
-      <span>Opacity<span class="prop-hint" title="overlay transparency" data-tooltip="overlay transparency">?</span></span>
+      <span>Opacity<span class="prop-hint" title="overlay transparency"
+          data-tooltip="overlay transparency">?</span></span>
       <input id="prop-opacity" type="range" min="0.05" max="0.6" step="0.05" value="0.2" />
     </label>
     <label class="prop-field">
-      <span>Model<span class="prop-hint" title="path-loss environment profile (best-case matches the Meshcore app)" data-tooltip="path-loss environment profile (best-case matches the Meshcore app)">?</span></span>
+      <span>Model<span class="prop-hint" title="path-loss environment profile (best-case matches the Meshcore app)"
+          data-tooltip="path-loss environment profile (best-case matches the Meshcore app)">?</span></span>
       <select id="prop-model">
         <option value="free" selected>Best-case (free-space)</option>
         <option value="suburban">Suburban</option>
@@ -218,65 +227,80 @@
       </select>
     </label>
     <label class="prop-field">
-      <span>Terrain adjust<span class="prop-hint" title="apply terrain diffraction using elevation tiles" data-tooltip="apply terrain diffraction using elevation tiles">?</span></span>
+      <span>Terrain adjust<span class="prop-hint" title="apply terrain diffraction using elevation tiles"
+          data-tooltip="apply terrain diffraction using elevation tiles">?</span></span>
       <input id="prop-terrain" type="checkbox" checked />
     </label>
     <label class="prop-field">
-      <span>Tx AGL (m)<span class="prop-hint" title="transmitter height above ground" data-tooltip="transmitter height above ground">?</span></span>
+      <span>Tx AGL (m)<span class="prop-hint" title="transmitter height above ground"
+          data-tooltip="transmitter height above ground">?</span></span>
       <input id="prop-tx-agl" type="number" min="0" max="50" step="0.5" value="5" />
     </label>
     <label class="prop-field">
-      <span>Tx MSL override (m)<span class="prop-hint" title="override transmitter altitude above sea level" data-tooltip="override transmitter altitude above sea level">?</span></span>
+      <span>Tx MSL override (m)<span class="prop-hint" title="override transmitter altitude above sea level"
+          data-tooltip="override transmitter altitude above sea level">?</span></span>
       <input id="prop-tx-msl" type="number" min="-100" max="9000" step="1" placeholder="auto" />
     </label>
     <label class="prop-field">
-      <span>Rx AGL (m)<span class="prop-hint" title="receiver height above ground" data-tooltip="receiver height above ground">?</span></span>
+      <span>Rx AGL (m)<span class="prop-hint" title="receiver height above ground"
+          data-tooltip="receiver height above ground">?</span></span>
       <input id="prop-rx-agl" type="number" min="0" max="50" step="0.5" value="5" />
     </label>
     <label class="prop-field">
-      <span>Rx MSL override (m)<span class="prop-hint" title="override receiver altitude above sea level" data-tooltip="override receiver altitude above sea level">?</span></span>
+      <span>Rx MSL override (m)<span class="prop-hint" title="override receiver altitude above sea level"
+          data-tooltip="override receiver altitude above sea level">?</span></span>
       <input id="prop-rx-msl" type="number" min="-100" max="9000" step="1" placeholder="auto" />
     </label>
     <label class="prop-field">
-      <span>Min Rx cutoff (dBm)<span class="prop-hint" title="enter your SNR value here" data-tooltip="enter your SNR value here">?</span></span>
+      <span>Min Rx cutoff (dBm)<span class="prop-hint" title="enter your SNR value here"
+          data-tooltip="enter your SNR value here">?</span></span>
       <input id="prop-min-rx" type="number" min="-150" max="-60" step="1" value="-97" />
     </label>
     <label class="prop-field">
-      <span>Auto range (cutoff)<span class="prop-hint" title="derive range from min Rx cutoff" data-tooltip="derive range from min Rx cutoff">?</span></span>
+      <span>Auto range (cutoff)<span class="prop-hint" title="derive range from min Rx cutoff"
+          data-tooltip="derive range from min Rx cutoff">?</span></span>
       <input id="prop-auto-range" type="checkbox" checked />
     </label>
     <label class="prop-field">
-      <span>Multi-origin<span class="prop-hint" title="allow multiple transmitters in one render" data-tooltip="allow multiple transmitters in one render">?</span></span>
+      <span>Multi-origin<span class="prop-hint" title="allow multiple transmitters in one render"
+          data-tooltip="allow multiple transmitters in one render">?</span></span>
       <input id="prop-multi-origin" type="checkbox" checked />
     </label>
     <label class="prop-field">
-      <span>Fade by margin<span class="prop-hint" title="fade coverage by link margin strength" data-tooltip="fade coverage by link margin strength">?</span></span>
+      <span>Fade by margin<span class="prop-hint" title="fade coverage by link margin strength"
+          data-tooltip="fade coverage by link margin strength">?</span></span>
       <input id="prop-fade-margin" type="checkbox" />
     </label>
     <label class="prop-field">
-      <span>WebGPU (experimental)<span class="prop-hint" title="GPU-accelerated render (terrain off)" data-tooltip="GPU-accelerated render (terrain off)">?</span></span>
+      <span>WebGPU (experimental)<span class="prop-hint" title="GPU-accelerated render (terrain off)"
+          data-tooltip="GPU-accelerated render (terrain off)">?</span></span>
       <input id="prop-webgpu" type="checkbox" />
     </label>
     <div class="small">Tip: click an origin marker to remove it.</div>
     <button class="map-toggle" id="prop-clear-origins" type="button">Clear origins</button>
     <label class="prop-field">
-      <span>Auto resolution<span class="prop-hint" title="scale grid to stay within target cells" data-tooltip="scale grid to stay within target cells">?</span></span>
+      <span>Auto resolution<span class="prop-hint" title="scale grid to stay within target cells"
+          data-tooltip="scale grid to stay within target cells">?</span></span>
       <input id="prop-auto-res" type="checkbox" checked />
     </label>
     <label class="prop-field">
-      <span>Target cells<span class="prop-hint" title="upper bound for grid cell count" data-tooltip="upper bound for grid cell count">?</span></span>
+      <span>Target cells<span class="prop-hint" title="upper bound for grid cell count"
+          data-tooltip="upper bound for grid cell count">?</span></span>
       <input id="prop-max-cells" type="number" min="20000" max="500000" step="10000" value="120000" />
     </label>
     <label class="prop-field">
-      <span>Grid step (m)<span class="prop-hint" title="spacing between coverage samples" data-tooltip="spacing between coverage samples">?</span></span>
+      <span>Grid step (m)<span class="prop-hint" title="spacing between coverage samples"
+          data-tooltip="spacing between coverage samples">?</span></span>
       <input id="prop-grid" type="number" min="30" max="300" step="10" value="90" />
     </label>
     <label class="prop-field">
-      <span>Sample step (m)<span class="prop-hint" title="terrain sampling interval along each ray" data-tooltip="terrain sampling interval along each ray">?</span></span>
+      <span>Sample step (m)<span class="prop-hint" title="terrain sampling interval along each ray"
+          data-tooltip="terrain sampling interval along each ray">?</span></span>
       <input id="prop-sample" type="number" min="30" max="300" step="10" value="90" />
     </label>
     <label class="prop-field">
-      <span>Range factor<span class="prop-hint" title="scale the base range estimate" data-tooltip="scale the base range estimate">?</span></span>
+      <span>Range factor<span class="prop-hint" title="scale the base range estimate"
+          data-tooltip="scale the base range estimate">?</span></span>
       <input id="prop-range-factor" type="range" min="0.25" max="1" step="0.05" value="1" />
     </label>
     <button class="map-toggle" id="prop-render" type="button">Render prop</button>
@@ -286,13 +310,11 @@
   </div>
   <div id="map"></div>
 
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin="anonymous"
-  ></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js" crossorigin="anonymous"></script>
 
   <script src="/static/app.js?v={{ASSET_VERSION}}" defer></script>
 </body>
+
 </html>

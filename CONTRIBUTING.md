@@ -8,7 +8,7 @@ Thanks for helping improve the MeshCore Live Map. This repo is intentionally lig
 3) Verify: `curl -s http://localhost:8080/snapshot`
 
 ## Versioning
-- Current version: `1.1.2` (see `VERSIONS.md`).
+- Current version: `1.2.0` (see `VERSIONS.md`).
 - Update `VERSION.txt` when adding features.
 - Append a new section to `VERSIONS.md` describing the change set.
 
@@ -28,6 +28,8 @@ Thanks for helping improve the MeshCore Live Map. This repo is intentionally lig
 - `docker compose up -d --build` after any change.
 - `curl -s http://localhost:8080/stats` to confirm MQTT ingest.
 - Open the map: confirm markers, LOS, and propagation behave as expected.
+- Turnstile only activates when `PROD_MODE=true`; if you are testing Turnstile,
+  set `PROD_MODE=true` plus the `TURNSTILE_*` env vars.
 - If `COVERAGE_API_URL` is blank, confirm the Coverage button is hidden.
 - Note: coordinates at `0,0` (even as strings) are filtered and won’t render.
 - Radius filter: `MAP_RADIUS_KM=0` disables filtering; `.env.example` uses 241.4 km (150mi).

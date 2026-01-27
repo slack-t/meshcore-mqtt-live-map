@@ -1,5 +1,20 @@
 # Versions
 
+## v1.2.0 (01-27-2026)
+- Add Cloudflare Turnstile protection with a landing/verification flow and auth cookie.
+- Turnstile now only activates when `PROD_MODE=true` (even if `TURNSTILE_ENABLED=true`).
+- Preserve Discord/social embeds by allowlisting common bots via user-agent bypass.
+- Hide the Turnstile site key from the page while still providing it to the widget.
+- Credit: Nasticator (PR #13).
+- New envs:
+  - `TURNSTILE_ENABLED`
+  - `TURNSTILE_SITE_KEY`
+  - `TURNSTILE_SECRET_KEY`
+  - `TURNSTILE_API_URL`
+  - `TURNSTILE_TOKEN_TTL_SECONDS`
+  - `TURNSTILE_BOT_BYPASS`
+  - `TURNSTILE_BOT_ALLOWLIST`
+
 ## v1.1.2 (01-27-2026)
 - Dev route debug: route lines are now clickable (when `PROD_MODE=false`) and log rich hop-by-hop details to the browser console (distance, hops, hashes, origin/receiver, timestamps). Credit: https://github.com/sefator (PR #14).
 
