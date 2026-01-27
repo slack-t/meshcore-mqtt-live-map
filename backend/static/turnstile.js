@@ -182,7 +182,17 @@ const TurnstileAuth = {
         this.log(4, 'Token verified successfully');
         this.showSuccess();
         
-        // Store the auth token
+        // Store the auth token in cookie (sent with every request)
+        // Set with expires in 24 hours (86400 seconds)
+        const expiresIn = 86400;
+        const d = new Date();
+        d.setTime(d.getTime() + (expiresIn * 1000));
+        const expires = d.toUTCString();
+        document.cookie = `meshmap_auth=${data.auth_token}; expires=${expires}; path=/; SameSite=Lax`;
+        
+        this.log(4, `Cookie set: meshmap_auth`);
+        
+        // Also store in sessionStorage/localStorage for client-side checks
         sessionStorage.setItem('meshmap_auth_token', data.auth_token);
         localStorage.setItem('meshmap_auth_token', data.auth_token);
 

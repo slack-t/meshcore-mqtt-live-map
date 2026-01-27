@@ -2445,13 +2445,25 @@ async def verify_turnstile(request: Request):
     auth_token = turnstile_verifier.issue_auth_token()
     print(f"[turnstile] Verification successful, issued auth token")
 
-    return JSONResponse(
+    # Create response with auth token and set cookie
+    response = JSONResponse(
       {
         "success": True,
         "auth_token": auth_token,
       },
       status_code=200,
     )
+    
+    # Set auth cookie (expires in TURNSTILE_TOKEN_TTL_SECONDS)
+    response.set_cookie(
+      key="meshmap_auth",
+      value=auth_token,
+      max_age=TURNSTILE_TOKEN_TTL_SECONDS,
+      path="/",
+      samesite="lax",
+    )
+    
+    return response
 
   except json.JSONDecodeError:
     return JSONResponse(
