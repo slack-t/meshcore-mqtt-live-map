@@ -3351,6 +3351,186 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       refreshHeatLayer();
     }
 
+    function computeRouteDistanceMeters(points) {
+      if (!Array.isArray(points) || points.length < 2) return 0;
+      let total = 0;
+      for (let i = 1; i < points.length; i += 1) {
+        const prev = points[i - 1];
+        const next = points[i];
+        if (!Array.isArray(prev) || !Array.isArray(next)) continue;
+        const [plat, plon] = prev;
+        const [nlat, nlon] = next;
+        if (!Number.isFinite(plat) || !Number.isFinite(plon) || !Number.isFinite(nlat) || !Number.isFinite(nlon)) {
+          continue;
+        }
+        total += haversineMeters(plat, plon, nlat, nlon);
+      }
+      return total;
+    }
+
+    function formatSecondsLabel(seconds) {
+      if (!Number.isFinite(seconds)) return 'unknown';
+      if (seconds <= 0) return 'expired';
+      if (seconds < 60) return `${Math.round(seconds)}s`;
+      const minutes = seconds / 60;
+      if (minutes < 60) return `${Math.round(minutes)}m`;
+      const hours = minutes / 60;
+      if (hours < 24) return `${Math.round(hours)}h`;
+      const days = hours / 24;
+      return `${Math.round(days)}d`;
+    }
+
+    function formatTimestampLabel(tsSeconds) {
+      if (!Number.isFinite(tsSeconds)) return 'unknown';
+      try {
+        return new Date(tsSeconds * 1000).toLocaleString();
+      } catch (err) {
+        return 'unknown';
+      }
+    }
+
+    function hashFirstByteLabel(hash) {
+      if (!hash) return null;
+      const text = String(hash).trim();
+      if (!text) return null;
+      const maybeHex = text.slice(0, 2);
+      const hexVal = Number.parseInt(maybeHex, 16);
+      if (!Number.isNaN(hexVal)) {
+        return `0x${maybeHex.toUpperCase()} (${hexVal})`;
+      }
+      const firstChar = text.charCodeAt(0);
+      if (Number.isFinite(firstChar)) {
+        return `0x${firstChar.toString(16).padStart(2, '0').toUpperCase()} (${firstChar})`;
+      }
+      return text.slice(0, 4);
+    }
+
+    function buildRouteLogMeta(route) {
+      if (!route || !Array.isArray(route.points)) return null;
+      const hopCount = Math.max(0, route.points.length - 1);
+      const distanceMeters = computeRouteDistanceMeters(route.points);
+      const expiresSeconds = Number(route.expires_at);
+      const expiresInSeconds = Number.isFinite(expiresSeconds)
+        ? (expiresSeconds - Date.now() / 1000)
+        : null;
+      let cumulative = 0;
+      const hashes = Array.isArray(route.hashes) ? route.hashes : null;
+      const pointRows = route.points.map((pt, idx) => {
+        const lat = Number(pt[0]);
+        const lon = Number(pt[1]);
+        let hopDistance = null;
+        if (idx > 0 && Number.isFinite(lat) && Number.isFinite(lon)) {
+          const prev = route.points[idx - 1];
+          const prevLat = Number(prev[0]);
+          const prevLon = Number(prev[1]);
+          if (Number.isFinite(prevLat) && Number.isFinite(prevLon)) {
+            hopDistance = haversineMeters(prevLat, prevLon, lat, lon);
+            if (Number.isFinite(hopDistance)) {
+              cumulative += hopDistance;
+            }
+          }
+        }
+        const hopHash = hashes && idx > 0 ? hashes[idx - 1] : null;
+        return {
+          index: idx,
+          lat,
+          lon,
+          hop_distance_m: hopDistance,
+          hop_distance_label: Number.isFinite(hopDistance) ? formatDistanceUnits(hopDistance) : null,
+          cumulative_m: cumulative,
+          cumulative_label: Number.isFinite(cumulative) ? formatDistanceUnits(cumulative) : null,
+          hop_hash: hopHash || null,
+          hop_first_byte: hopHash ? hashFirstByteLabel(hopHash) : null
+        };
+      });
+      return {
+        id: route.id,
+        route_mode: route.route_mode || 'path',
+        payload_type: route.payload_type,
+        payload_label: payloadTypeLabel(route.payload_type),
+        hop_count: hopCount,
+        point_count: route.points.length,
+        distance_m: distanceMeters,
+        distance_label: Number.isFinite(distanceMeters) && distanceMeters > 0 ? formatDistanceUnits(distanceMeters) : 'unknown',
+        origin_id: route.origin_id,
+        origin_label: deviceLabelFromId(route.origin_id),
+        receiver_id: route.receiver_id,
+        receiver_label: deviceLabelFromId(route.receiver_id),
+        message_hash: route.message_hash,
+        topic: route.topic,
+        snr_values: route.snr_values,
+        expires_at: expiresSeconds,
+        expires_label: expiresInSeconds != null ? formatSecondsLabel(expiresInSeconds) : 'unknown',
+        ts: route.ts,
+        ts_label: formatTimestampLabel(route.ts),
+        points: pointRows,
+        hashes
+      };
+    }
+
+    function logRouteDetails(meta, clickLatLng) {
+      if (!meta) {
+        console.warn('Route details unavailable');
+        return;
+      }
+      const parts = [];
+      if (meta.payload_label) parts.push(meta.payload_label);
+      parts.push(meta.route_mode);
+      parts.push(`${meta.hop_count} hop${meta.hop_count === 1 ? '' : 's'}`);
+      if (meta.distance_label && meta.distance_label !== 'unknown') parts.push(meta.distance_label);
+      const title = meta.id ? `Route ${meta.id}` : 'Route';
+      if (console.groupCollapsed) {
+        console.groupCollapsed(`${title}${parts.length ? ` (${parts.join(' • ')})` : ''}`);
+      }
+      const routeInfo = {
+        mode: meta.route_mode,
+        payload: meta.payload_label,
+        hops: meta.hop_count,
+        points: meta.point_count,
+        distance: meta.distance_label,
+        origin: meta.origin_label,
+        receiver: meta.receiver_label,
+        started: meta.ts_label,
+        expires_in: meta.expires_label,
+        message_hash: meta.message_hash,
+        topic: meta.topic,
+        snr_values: meta.snr_values,
+        click: clickLatLng ? { lat: clickLatLng.lat, lon: clickLatLng.lng } : undefined
+      };
+      console.log('Route details:', routeInfo);
+      if (Array.isArray(meta.points) && meta.points.length && console.table) {
+        const rows = meta.points.map((pt) => ({
+          index: pt.index,
+          lat: Number.isFinite(pt.lat) ? pt.lat.toFixed(6) : pt.lat,
+          lon: Number.isFinite(pt.lon) ? pt.lon.toFixed(6) : pt.lon,
+          hop_distance: pt.hop_distance_label,
+          cumulative: pt.cumulative_label,
+          hop_hash: pt.hop_hash ? shortHash(pt.hop_hash) : null,
+          hop_first_byte: pt.hop_first_byte || null
+        }));
+        console.table(rows);
+      }
+      if (console.groupCollapsed) {
+        console.groupEnd();
+      }
+    }
+
+    function handleRouteClick(routeId, ev) {
+      if (ev) {
+        L.DomEvent.stop(ev);
+      }
+      const entry = routeLines.get(routeId);
+      if (!entry) {
+        console.warn('Route entry missing for click', routeId);
+        return;
+      }
+      if (!entry.meta) {
+        const latlngs = entry.line.getLatLngs ? entry.line.getLatLngs() : [];
+        entry.meta = buildRouteLogMeta({ id: routeId, points: latlngs.map(pt => [pt.lat, pt.lng]) });
+      }
+      logRouteDetails(entry.meta, ev && ev.latlng);
+    }
+
     function upsertRoute(r, skipHeat = false) {
       if (!r || !Array.isArray(r.points) || r.points.length < 2) return;
       const id = r.id || `route-${Date.now()}-${Math.random()}`;
@@ -3380,15 +3560,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         style.dashArray = '8 14';
       }
 
+      const routeMeta = buildRouteLogMeta({ ...r, id, points, hashes: r.hashes });
       let entry = routeLines.get(id);
       if (!entry) {
         const line = L.polyline(points, style).addTo(routeLayer);
+        if (!prodMode) {
+          line.on('click', (ev) => handleRouteClick(id, ev));
+        }
         entry = { line, timeout: null };
         routeLines.set(id, entry);
       } else {
         entry.line.setLatLngs(points);
         entry.line.setStyle(style);
       }
+      entry.meta = routeMeta;
       const lineEl = entry.line.getElement();
       if (lineEl) {
         lineEl.classList.add('route-animated');
