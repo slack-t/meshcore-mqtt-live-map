@@ -505,6 +505,7 @@
       animation: route-dash 8s linear infinite;
       stroke-linecap: butt;
       stroke-linejoin: miter;
+      pointer-events: auto;
     }
     @keyframes route-dash {
       to { stroke-dashoffset: -200; }
