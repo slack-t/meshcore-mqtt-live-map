@@ -1,7 +1,7 @@
 # Architecture Guide
 
 This document explains how the Mesh Live Map codebase is organized and how the components interact.
-Current version: `1.1.1` (see `VERSIONS.md`).
+Current version: `1.1.2` (see `VERSIONS.md`).
 
 ## High-Level Overview
 
@@ -168,6 +168,9 @@ A single file containing all client-side logic:
 | Propagation tool | 1300-2000 | RF coverage simulation |
 | WebSocket | 2000-2200 | Real-time updates |
 | UI handlers | 2200-4100 | Toggle buttons, sliders, search |
+
+Route rendering notes:
+- In dev mode (`PROD_MODE=false`), route lines are clickable and log hop-by-hop debug details to the browser console (PR #14).
 
 ### styles.css (Styling)
 
@@ -358,4 +361,4 @@ npx eslint backend/static/app.js
 ```
 
 Versioning:
-- See `VERSIONS.md` for the changelog; `VERSION.txt` mirrors the latest entry (`1.1.1`).
+- See `VERSIONS.md` for the changelog; `VERSION.txt` mirrors the latest entry (`1.1.2`).
