@@ -540,3 +540,16 @@
       pointer-events: auto;
     }
   
+
+/* Hop labels */
+.node-hop-label {
+  background-color: #3b82f6;
+  color: white;
+  border-radius: 50%;
+  text-align: center;
+  font-size: 10px;
+  line-height: 18px;
+  font-weight: bold;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  border: 1px solid white;
+}
