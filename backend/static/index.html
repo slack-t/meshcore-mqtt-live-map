@@ -106,6 +106,8 @@
       <button class="map-toggle" id="heat-toggle" type="button">Hide heat</button>
       <button class="map-toggle" id="coverage-toggle" type="button">Coverage</button>
       <button class="map-toggle" id="history-toggle" type="button">History tool</button>
+
+      <button class="map-toggle" id="show-hops-toggle" type="button">Show hops</button>
       <button class="map-toggle" id="peers-toggle" type="button">Peers tool</button>
       <button class="map-toggle" id="los-toggle" type="button">LOS tool</button>
       <button class="map-toggle" id="prop-toggle" type="button">Propagation</button>
@@ -186,6 +188,12 @@
       <div class="peer-list" id="peers-out"></div>
     </div>
     <button class="map-toggle" id="peers-clear" type="button">Clear peers</button>
+  </div>
+  <div class="route-panel" id="route-panel" hidden>
+    <button class="panel-close" id="route-hide" type="button" aria-label="Hide route details">×</button>
+    <div class="small"><strong>Route Details</strong></div>
+    <div class="small" id="route-meta"></div>
+    <div class="peer-list" id="route-details-content"></div>
   </div>
   <div class="prop-panel" id="prop-panel">
     <div class="small"><strong>Propagation estimate</strong></div>
