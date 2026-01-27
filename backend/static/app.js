@@ -158,10 +158,9 @@ let losPeakMarkers = [];
 let losHoverMarker = null;
 let losActivePeak = null;
 let losLocked = false;
-
-let showHops = localStorage.getItem('meshmapShowHops') === 'true';
 let lastLosDistance = null;
 let lastLosStatusMeta = null;
+let showHops = localStorage.getItem('meshmapShowHops') === 'true';
 const losProfile = document.getElementById('los-profile');
 const losProfileSvg = document.getElementById('los-profile-svg');
 const losProfileTooltip = document.getElementById('los-profile-tooltip');
@@ -183,10 +182,6 @@ const peersIn = document.getElementById('peers-in');
 const peersOut = document.getElementById('peers-out');
 const peersToggle = document.getElementById('peers-toggle');
 const peersClear = document.getElementById('peers-clear');
-const routePanel = document.getElementById('route-panel');
-const routeHideButton = document.getElementById('route-hide');
-const routeDetailsContent = document.getElementById('route-details-content');
-const routeMeta = document.getElementById('route-meta');
 let losProfileData = [];
 let losProfileMeta = null;
 let losPointMarkers = [];
@@ -474,15 +469,6 @@ function successRateToColor(rate) {
     return hex.length === 1 ? '0' + hex : hex;
   };
   return `#${toHex(red)}${toHex(green)}${toHex(blue)}`;
-}
-
-function strToColor(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const c = (hash & 0x00ffffff).toString(16).toUpperCase();
-  return '#' + '00000'.substring(0, 6 - c.length) + c;
 }
 
 async function fetchCoverageData() {
@@ -812,86 +798,16 @@ function renderPeerList(target, peers, total, label) {
   peers.forEach(peer => {
     const item = document.createElement('div');
     item.className = 'peer-item';
-    item.innerHTML = `
-      <div style="flex:1; overflow:hidden;">
-        <div class="peer-name">${peer.name || 'Unknown'}</div>
-        <div class="small popup-id">${deviceShortId({ device_id: peer.peer_id })}</div>
-      </div>
-      <div class="peer-count">${peer.snr != null ? peer.snr + ' dB' : ''}</div>
-    `;
-    item.onclick = (e) => {
-      e.stopPropagation();
-      const m = markers.get(peer.peer_id);
-      if (m) {
-        m.openPopup();
-        map.panTo(m.getLatLng());
+    const name = peer.name || (peer.peer_id ? `${peer.peer_id.slice(0, 8)}…` : 'Unknown');
+    const percent = total > 0 ? `${peer.percent.toFixed(1)}%` : '0%';
+    item.innerHTML = `<span class="peer-name">${name}</span><span class="peer-count">${peer.count} • ${percent}</span>`;
+    item.addEventListener('click', () => {
+      if (peer.peer_id) {
+        focusDevice(peer.peer_id);
       }
-    };
+    });
     target.appendChild(item);
   });
-}
-
-function hideRouteDetails() {
-  if (routePanel) {
-    routePanel.classList.remove('active');
-    routePanel.setAttribute('hidden', 'hidden');
-    routePanel.style.display = 'none';
-  }
-}
-
-function showRouteDetails(route) {
-  if (!routePanel || !routeDetailsContent) return;
-  // Hide other panels
-  setHistoryPanelHidden(true);
-  if (peersPanel) peersPanel.classList.remove('active');
-  if (losPanel) losPanel.classList.remove('active');
-  if (propPanel) propPanel.classList.remove('active');
-
-  routeDetailsContent.innerHTML = '';
-  if (routeMeta) {
-    routeMeta.textContent = `Route ID: ${deviceShortId({ device_id: route.id })} (${route.points.length - 1} hops)`;
-  }
-
-  const pointIds = route.point_ids || [];
-  if (pointIds.length === 0) {
-    routeDetailsContent.innerHTML = '<div class="small">No hop details available.</div>';
-  } else {
-    pointIds.forEach((id, idx) => {
-      const d = deviceData.get(id) || { device_id: id };
-      const name = d.name || deviceNames.get(id) || 'Unknown';
-
-      const item = document.createElement('div');
-      item.className = 'peer-item'; // Reuse peer-item styling
-
-      let label = `Hop ${idx}`;
-      if (idx === 0) label = 'Origin';
-      if (idx === pointIds.length - 1) label = 'Destination';
-
-      item.innerHTML = `
-        <div style="display:flex; align-items:center; gap:8px; width:100%;">
-           <div class="node-hop-label" style="background-color: ${strToColor(route.id)}; width:20px; height:20px;">${idx}</div>
-           <div style="flex:1; overflow:hidden;">
-             <div class="peer-name">${name}</div>
-             <div class="small popup-id">${label} • ${deviceShortId(d)}</div>
-           </div>
-        </div>
-      `;
-      item.onclick = (e) => {
-        e.stopPropagation();
-        const m = markers.get(id);
-        if (m) {
-          m.openPopup();
-          map.panTo(m.getLatLng());
-        }
-      };
-      routeDetailsContent.appendChild(item);
-    });
-  }
-
-  routePanel.classList.add('active');
-  routePanel.removeAttribute('hidden');
-  routePanel.style.display = 'block';
-  layoutSidePanels();
 }
 
 async function selectPeerNode(deviceId) {
@@ -3165,9 +3081,6 @@ function removeRoutes(ids) {
     if (!entry) return;
     if (entry.timeout) clearTimeout(entry.timeout);
     routeLayer.removeLayer(entry.line);
-    if (entry.labels) {
-      entry.labels.forEach(l => routeLayer.removeLayer(l));
-    }
     routeLines.delete(id);
   });
   setStats();
@@ -3177,9 +3090,6 @@ function clearRoutes() {
   routeLines.forEach(entry => {
     if (entry.timeout) clearTimeout(entry.timeout);
     routeLayer.removeLayer(entry.line);
-    if (entry.labels) {
-      entry.labels.forEach(l => routeLayer.removeLayer(l));
-    }
   });
   routeLines.clear();
   setStats();
@@ -3442,10 +3352,253 @@ function seedHeat(items) {
   refreshHeatLayer();
 }
 
+function computeRouteDistanceMeters(points) {
+  if (!Array.isArray(points) || points.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const prev = points[i - 1];
+    const next = points[i];
+    if (!Array.isArray(prev) || !Array.isArray(next)) continue;
+    const [plat, plon] = prev;
+    const [nlat, nlon] = next;
+    if (!Number.isFinite(plat) || !Number.isFinite(plon) || !Number.isFinite(nlat) || !Number.isFinite(nlon)) {
+      continue;
+    }
+    total += haversineMeters(plat, plon, nlat, nlon);
+  }
+  return total;
+}
+
+function formatSecondsLabel(seconds) {
+  if (!Number.isFinite(seconds)) return 'unknown';
+  if (seconds <= 0) return 'expired';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = seconds / 60;
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${Math.round(hours)}h`;
+  const days = hours / 24;
+  return `${Math.round(days)}d`;
+}
+
+function formatTimestampLabel(tsSeconds) {
+  if (!Number.isFinite(tsSeconds)) return 'unknown';
+  try {
+    return new Date(tsSeconds * 1000).toLocaleString();
+  } catch (err) {
+    return 'unknown';
+  }
+}
+
+function hashFirstByteLabel(hash) {
+  if (!hash) return null;
+  const text = String(hash).trim();
+  if (!text) return null;
+  const maybeHex = text.slice(0, 2);
+  const hexVal = Number.parseInt(maybeHex, 16);
+  if (!Number.isNaN(hexVal)) {
+    return `0x${maybeHex.toUpperCase()} (${hexVal})`;
+  }
+  const firstChar = text.charCodeAt(0);
+  if (Number.isFinite(firstChar)) {
+    return `0x${firstChar.toString(16).padStart(2, '0').toUpperCase()} (${firstChar})`;
+  }
+  return text.slice(0, 4);
+}
+
+function buildRouteLogMeta(route) {
+  if (!route || !Array.isArray(route.points)) return null;
+  const hopCount = Math.max(0, route.points.length - 1);
+  const distanceMeters = computeRouteDistanceMeters(route.points);
+  const expiresSeconds = Number(route.expires_at);
+  const expiresInSeconds = Number.isFinite(expiresSeconds)
+    ? (expiresSeconds - Date.now() / 1000)
+    : null;
+  let cumulative = 0;
+  const hashes = Array.isArray(route.hashes) ? route.hashes : null;
+  const pointRows = route.points.map((pt, idx) => {
+    const lat = Number(pt[0]);
+    const lon = Number(pt[1]);
+    let hopDistance = null;
+    if (idx > 0 && Number.isFinite(lat) && Number.isFinite(lon)) {
+      const prev = route.points[idx - 1];
+      const prevLat = Number(prev[0]);
+      const prevLon = Number(prev[1]);
+      if (Number.isFinite(prevLat) && Number.isFinite(prevLon)) {
+        hopDistance = haversineMeters(prevLat, prevLon, lat, lon);
+        if (Number.isFinite(hopDistance)) {
+          cumulative += hopDistance;
+        }
+      }
+    }
+    const hopHash = hashes && idx > 0 ? hashes[idx - 1] : null;
+    return {
+      index: idx,
+      lat,
+      lon,
+      hop_distance_m: hopDistance,
+      hop_distance_label: Number.isFinite(hopDistance) ? formatDistanceUnits(hopDistance) : null,
+      cumulative_m: cumulative,
+      cumulative_label: Number.isFinite(cumulative) ? formatDistanceUnits(cumulative) : null,
+      hop_hash: hopHash || null,
+      hop_first_byte: hopHash ? hashFirstByteLabel(hopHash) : null
+    };
+  });
+  return {
+    id: route.id,
+    route_mode: route.route_mode || 'path',
+    payload_type: route.payload_type,
+    payload_label: payloadTypeLabel(route.payload_type),
+    hop_count: hopCount,
+    point_count: route.points.length,
+    distance_m: distanceMeters,
+    distance_label: Number.isFinite(distanceMeters) && distanceMeters > 0 ? formatDistanceUnits(distanceMeters) : 'unknown',
+    origin_id: route.origin_id,
+    origin_label: deviceLabelFromId(route.origin_id),
+    receiver_id: route.receiver_id,
+    receiver_label: deviceLabelFromId(route.receiver_id),
+    message_hash: route.message_hash,
+    topic: route.topic,
+    snr_values: route.snr_values,
+    expires_at: expiresSeconds,
+    expires_label: expiresInSeconds != null ? formatSecondsLabel(expiresInSeconds) : 'unknown',
+    ts: route.ts,
+    ts_label: formatTimestampLabel(route.ts),
+    points: pointRows,
+    hashes
+  };
+}
+
+function logRouteDetails(meta, clickLatLng) {
+  if (!meta) {
+    console.warn('Route details unavailable');
+    return;
+  }
+  const parts = [];
+  if (meta.payload_label) parts.push(meta.payload_label);
+  parts.push(meta.route_mode);
+  parts.push(`${meta.hop_count} hop${meta.hop_count === 1 ? '' : 's'}`);
+  if (meta.distance_label && meta.distance_label !== 'unknown') parts.push(meta.distance_label);
+  const title = meta.id ? `Route ${meta.id}` : 'Route';
+  if (console.groupCollapsed) {
+    console.groupCollapsed(`${title}${parts.length ? ` (${parts.join(' • ')})` : ''}`);
+  }
+  const routeInfo = {
+    mode: meta.route_mode,
+    payload: meta.payload_label,
+    hops: meta.hop_count,
+    points: meta.point_count,
+    distance: meta.distance_label,
+    origin: meta.origin_label,
+    receiver: meta.receiver_label,
+    started: meta.ts_label,
+    expires_in: meta.expires_label,
+    message_hash: meta.message_hash,
+    topic: meta.topic,
+    snr_values: meta.snr_values,
+    click: clickLatLng ? { lat: clickLatLng.lat, lon: clickLatLng.lng } : undefined
+  };
+  console.log('Route details:', routeInfo);
+  if (Array.isArray(meta.points) && meta.points.length && console.table) {
+    const rows = meta.points.map((pt) => ({
+      index: pt.index,
+      lat: Number.isFinite(pt.lat) ? pt.lat.toFixed(6) : pt.lat,
+      lon: Number.isFinite(pt.lon) ? pt.lon.toFixed(6) : pt.lon,
+      hop_distance: pt.hop_distance_label,
+      cumulative: pt.cumulative_label,
+      hop_hash: pt.hop_hash ? shortHash(pt.hop_hash) : null,
+      hop_first_byte: pt.hop_first_byte || null
+    }));
+    console.table(rows);
+  }
+  if (console.groupCollapsed) {
+    console.groupEnd();
+  }
+}
+
+function handleRouteClick(routeId, ev) {
+  if (ev) {
+    L.DomEvent.stop(ev);
+  }
+  const entry = routeLines.get(routeId);
+  if (!entry) {
+    console.warn('Route entry missing for click', routeId);
+    return;
+  }
+  if (!entry.meta) {
+    const latlngs = entry.line.getLatLngs ? entry.line.getLatLngs() : [];
+    entry.meta = buildRouteLogMeta({ id: routeId, points: latlngs.map(pt => [pt.lat, pt.lng]) });
+  }
+  logRouteDetails(entry.meta, ev && ev.latlng);
+}
+
+function hideRouteDetails() {
+  if (routePanel) {
+    routePanel.classList.remove('active');
+    routePanel.setAttribute('hidden', 'hidden');
+    routePanel.style.display = 'none';
+  }
+}
+
+function showRouteDetails(route) {
+  if (!routePanel || !routeDetailsContent) return;
+  // Hide other panels
+  setHistoryPanelHidden(true);
+  if (peersPanel) peersPanel.classList.remove('active');
+  if (losPanel) losPanel.classList.remove('active');
+  if (propPanel) propPanel.classList.remove('active');
+
+  routeDetailsContent.innerHTML = '';
+  if (routeMeta) {
+    routeMeta.textContent = `Route ID: ${deviceShortId({ device_id: route.id })} (${route.points.length - 1} hops)`;
+  }
+
+  const pointIds = route.point_ids || [];
+  if (pointIds.length === 0) {
+    routeDetailsContent.innerHTML = '<div class="small">No hop details available.</div>';
+  } else {
+    pointIds.forEach((id, idx) => {
+      const d = deviceData.get(id) || { device_id: id };
+      const name = d.name || deviceNames.get(id) || 'Unknown';
+
+      const item = document.createElement('div');
+      item.className = 'peer-item'; // Reuse peer-item styling
+
+      let label = `Hop ${idx}`;
+      if (idx === 0) label = 'Origin';
+      if (idx === pointIds.length - 1) label = 'Destination';
+
+      item.innerHTML = `
+            <div style="display:flex; align-items:center; gap:8px; width:100%;">
+               <div class="node-hop-label" style="background-color: ${strToColor(route.id)}; width:20px; height:20px;">${idx}</div>
+               <div style="flex:1; overflow:hidden;">
+                 <div class="peer-name">${name}</div>
+                 <div class="small popup-id">${label} • ${deviceShortId(d)}</div>
+               </div>
+            </div>
+          `;
+      item.onclick = (e) => {
+        e.stopPropagation();
+        const m = markers.get(id);
+        if (m) {
+          m.openPopup();
+          map.panTo(m.getLatLng());
+        }
+      };
+      routeDetailsContent.appendChild(item);
+    });
+  }
+
+  routePanel.classList.add('active');
+  routePanel.removeAttribute('hidden');
+}
+
 function updateRouteLabels(id, entry) {
   if (!entry || !entry.line) return;
   if (entry.labels) {
     entry.labels.forEach(l => routeLayer.removeLayer(l));
+    entry.labels = [];
+  } else {
     entry.labels = [];
   }
   if (!showHops || !entry.data) return;
@@ -3507,30 +3660,22 @@ function upsertRoute(r, skipHeat = false) {
     style.dashArray = '8 14';
   }
 
+  const routeMeta = buildRouteLogMeta({ ...r, id, points, hashes: r.hashes });
   let entry = routeLines.get(id);
   if (!entry) {
     const line = L.polyline(points, style).addTo(routeLayer);
-    entry = { line, timeout: null, labels: [] };
+    if (!prodMode) {
+      line.on('click', (ev) => handleRouteClick(id, ev));
+    }
+    entry = { line, timeout: null };
     routeLines.set(id, entry);
-    // Add click handler for route details
-    line.on('click', (e) => {
-      L.DomEvent.stop(e);
-      showRouteDetails(r);
-    });
   } else {
     entry.line.setLatLngs(points);
     entry.line.setStyle(style);
-    // Update click handler closure
-    entry.line.off('click');
-    entry.line.on('click', (e) => {
-      L.DomEvent.stop(e);
-      showRouteDetails(r);
-    });
-    if (entry.labels) {
-      entry.labels.forEach(l => routeLayer.removeLayer(l));
-      entry.labels = [];
-    }
   }
+  entry.meta = routeMeta;
+  entry.data = r;
+  updateRouteLabels(id, entry);
   const lineEl = entry.line.getElement();
   if (lineEl) {
     lineEl.classList.add('route-animated');
@@ -3541,11 +3686,6 @@ function upsertRoute(r, skipHeat = false) {
     const ms = Math.max(1000, (r.expires_at * 1000) - Date.now());
     entry.timeout = setTimeout(() => removeRoutes([id]), ms);
   }
-
-
-
-  entry.data = r;
-  updateRouteLabels(id, entry);
 
   if (!skipHeat) {
     addHeatPoints(points, r.ts, r.payload_type);
@@ -4095,16 +4235,6 @@ if (historyHideButton) {
   historyHideButton.addEventListener('click', hideHistoryPanel);
   historyHideButton.addEventListener('pointerdown', hideHistoryPanel);
 }
-if (routeHideButton) {
-  routeHideButton.addEventListener('click', () => hideRouteDetails());
-}
-updateHistoryFilterLabel();
-if (historyFilter) {
-  historyFilter.addEventListener('input', (ev) => {
-    updateHistoryFilter(ev.target.value);
-  });
-}
-
 const showHopsToggle = document.getElementById('show-hops-toggle');
 if (showHopsToggle) {
   const update = () => {
@@ -4121,6 +4251,12 @@ if (showHopsToggle) {
     }
   });
 }
+updateHistoryFilterLabel();
+if (historyFilter) {
+  historyFilter.addEventListener('input', (ev) => {
+    updateHistoryFilter(ev.target.value);
+  });
+}
 if (historyLinkSizeInput) {
   historyLinkSizeInput.addEventListener('input', (ev) => {
     updateHistoryLinkScale(ev.target.value);
@@ -4133,11 +4269,6 @@ if (peersToggle) {
     setPeersActive(!peersActive);
   });
 }
-map.on('click', () => {
-  setPeersActive(false);
-  setPropagationOrigin(null);
-  hideRouteDetails();
-});
 if (peersClear) {
   peersClear.addEventListener('click', () => {
     clearPeers();
