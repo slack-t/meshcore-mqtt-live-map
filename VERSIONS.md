@@ -1,5 +1,11 @@
 # Versions
 
+## v1.2.1 (01-28-2026)
+- Feature: Display hop numbers on route paths with a toggle button.
+- Feature: Consistent hop coloring based on route hash.
+- Feature: Route details widget showing hop information and repeater names.
+- Fix: Enhanced route click handling to show details panel.
+
 ## v1.2.0 (01-27-2026)
 - Add Cloudflare Turnstile protection with a landing/verification flow and auth cookie.
 - Turnstile now only activates when `PROD_MODE=true` (even if `TURNSTILE_ENABLED=true`).
